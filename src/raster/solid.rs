@@ -4,8 +4,8 @@ use crate::Vertex;
 use std::time::Instant;
 
 use super::coverage::{
-    TriangleBoundaryIncludes, TriangleCoverage, TriangleRowSearch, triangle_hint_x_range,
-    triangle_row_endpoints, triangle_scanline_x_range,
+    ScanlineEdges, TriangleBoundaryIncludes, TriangleCoverage, TriangleRowSearch,
+    triangle_hint_x_range, triangle_row_endpoints,
 };
 use super::math::{color_to_array, edge_includes_boundary, modulate_color};
 use super::sampling::{nearest_texel, texel_color};
@@ -46,11 +46,12 @@ pub(super) fn rasterize_solid_triangle(
         },
     };
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };

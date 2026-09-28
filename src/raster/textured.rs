@@ -5,8 +5,8 @@ use crate::geometry::pos2;
 use std::time::Instant;
 
 use super::coverage::{
-    TriangleBoundaryIncludes, TriangleCoverage, TriangleRowStateSearch,
-    triangle_row_state_endpoints, triangle_scanline_x_range,
+    ScanlineEdges, TriangleBoundaryIncludes, TriangleCoverage, TriangleRowStateSearch,
+    triangle_row_state_endpoints,
 };
 use super::math::{
     PixelOffset, edge, edge_covers_pixel, edge_includes_boundary, edge_step_x, edge_step_y,
@@ -133,12 +133,13 @@ fn rasterize_white_constant_texel_textured_triangle_no_stats(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
     let color_step = white_constant_texel_color_step(v0, v1, v2, &raster);
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -180,12 +181,13 @@ fn rasterize_white_constant_texel_alpha_only_textured_triangle_no_stats(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
     let alpha_step = white_constant_texel_alpha_step(v0, v1, v2, &raster);
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -230,11 +232,12 @@ fn rasterize_constant_texel_textured_triangle_no_stats_with_color(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -318,12 +321,13 @@ fn rasterize_white_constant_texel_textured_triangle_with_stats(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
     let color_step = white_constant_texel_color_step(v0, v1, v2, &raster);
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -518,12 +522,13 @@ fn rasterize_white_constant_texel_alpha_only_textured_triangle_with_stats(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
     let alpha_step = white_constant_texel_alpha_step(v0, v1, v2, &raster);
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -732,8 +737,15 @@ fn white_constant_texel_constant_run_color(
     if last_dx == run.start_dx {
         return Some(first);
     }
-    let last = white_constant_texel_pixel_color_with_alpha(row_color, color_step, last_dx, alpha);
-    (first == last).then_some(first)
+    // Channel by channel, stopping at the first difference: on a gradient row that is usually
+    // the first channel checked. Alpha is `alpha` at both ends.
+    let last_offset = usize_to_f32(last_dx);
+    (0..3)
+        .all(|channel| {
+            f32_to_u8_round_clamped(color_step[channel].mul_add(last_offset, row_color[channel]))
+                == first[channel]
+        })
+        .then_some(first)
 }
 
 fn emit_white_constant_texel_constant_color_run_no_stats(
@@ -1028,11 +1040,12 @@ fn rasterize_constant_texel_textured_triangle_with_stats_and_color(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -1126,11 +1139,12 @@ fn rasterize_textured_triangle_no_stats(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -1179,11 +1193,12 @@ fn rasterize_textured_triangle_with_stats(
     let mut row_edge1 = raster.row_edge1;
     let mut row_edge2 = raster.row_edge2;
     let positions = triangle_positions(vertices);
+    let scanline_edges = ScanlineEdges::new(positions);
     let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
 
     for y in bounds.min_y..bounds.max_y {
         let (start_x, end_x) = if narrow_scanlines {
-            triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+            scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
         } else {
             (bounds.min_x, bounds.max_x)
         };
@@ -2349,6 +2364,7 @@ mod tests {
         let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
         let raster = TriangleRasterState::new(v0, v1, v2, bounds, area);
         let positions = triangle_positions(triangle);
+        let scanline_edges = ScanlineEdges::new(positions);
         let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
         let mut row_edge0 = raster.row_edge0;
         let mut row_edge1 = raster.row_edge1;
@@ -2356,7 +2372,7 @@ mod tests {
 
         for y in bounds.min_y..bounds.max_y {
             let (start_x, end_x) = if narrow_scanlines {
-                triangle_scanline_x_range(positions, bounds, usize_to_f32(y) + 0.5)
+                scanline_edges.x_range(bounds, usize_to_f32(y) + 0.5)
             } else {
                 (bounds.min_x, bounds.max_x)
             };

@@ -481,52 +481,92 @@ pub(super) fn triangle_scanline_x_range(
     bounds: TriangleRasterBounds,
     pixel_center_y: f32,
 ) -> (usize, usize) {
-    let mut intersections = [0.0; 3];
-    let mut count = 0;
-    for (a, b) in [
-        (positions[0], positions[1]),
-        (positions[1], positions[2]),
-        (positions[2], positions[0]),
-    ] {
-        if same_f32(a.y, b.y) {
-            continue;
+    ScanlineEdges::new(positions).x_range(bounds, pixel_center_y)
+}
+
+/// A triangle's edges, prepared once for [`ScanlineEdges::x_range`] on every row. Everything
+/// here depends only on the triangle, so hoisting it out of the row loop computes the same
+/// values; the per-row intersection keeps its exact arithmetic.
+#[derive(Clone, Copy)]
+pub(super) struct ScanlineEdges {
+    edges: [Option<ScanlineEdge>; 3],
+}
+
+#[derive(Clone, Copy)]
+struct ScanlineEdge {
+    start: Pos2,
+    delta_x: f32,
+    delta_y: f32,
+    min_y: f32,
+    max_y: f32,
+}
+
+impl ScanlineEdges {
+    pub(super) fn new(positions: [Pos2; 3]) -> Self {
+        let edge = |a: Pos2, b: Pos2| {
+            (!same_f32(a.y, b.y)).then(|| ScanlineEdge {
+                start: a,
+                delta_x: b.x - a.x,
+                delta_y: b.y - a.y,
+                min_y: a.y.min(b.y),
+                max_y: a.y.max(b.y),
+            })
+        };
+        Self {
+            edges: [
+                edge(positions[0], positions[1]),
+                edge(positions[1], positions[2]),
+                edge(positions[2], positions[0]),
+            ],
         }
-        let min_y = a.y.min(b.y);
-        let max_y = a.y.max(b.y);
-        if pixel_center_y < min_y || pixel_center_y > max_y {
-            continue;
+    }
+
+    /// The candidate pixel range for the row whose centers sit at `pixel_center_y`: the span
+    /// between where the edges cross it, widened by a guard band and clamped to the bounds, or
+    /// the whole bounds when the crossings cannot be trusted.
+    pub(super) fn x_range(
+        self,
+        bounds: TriangleRasterBounds,
+        pixel_center_y: f32,
+    ) -> (usize, usize) {
+        let mut intersections = [0.0; 3];
+        let mut count = 0;
+        for edge in self.edges.into_iter().flatten() {
+            if pixel_center_y < edge.min_y || pixel_center_y > edge.max_y {
+                continue;
+            }
+            let t = (pixel_center_y - edge.start.y) / edge.delta_y;
+            let intersection = edge.start.x + edge.delta_x * t;
+            if !intersection.is_finite() {
+                return (bounds.min_x, bounds.max_x);
+            }
+            intersections[count] = intersection;
+            count += 1;
         }
-        let t = (pixel_center_y - a.y) / (b.y - a.y);
-        let intersection = a.x + (b.x - a.x) * t;
-        if !intersection.is_finite() {
+        if count < 2 {
             return (bounds.min_x, bounds.max_x);
         }
-        intersections[count] = intersection;
-        count += 1;
-    }
-    if count < 2 {
-        return (bounds.min_x, bounds.max_x);
-    }
 
-    let mut min_x = intersections[0];
-    let mut max_x = intersections[0];
-    for intersection in intersections.iter().take(count).skip(1) {
-        min_x = min_x.min(*intersection);
-        max_x = max_x.max(*intersection);
-    }
+        let mut min_x = intersections[0];
+        let mut max_x = intersections[0];
+        for intersection in intersections.iter().take(count).skip(1) {
+            min_x = min_x.min(*intersection);
+            max_x = max_x.max(*intersection);
+        }
 
-    let start_x = f32_to_usize_floor_clamped(min_x - 0.5, bounds.max_x)
-        .max(bounds.min_x)
-        .saturating_sub(TRIANGLE_SCANLINE_NARROWING_GUARD_PX)
-        .max(bounds.min_x);
-    let end_x = f32_to_usize_ceil_clamped(max_x - 0.5, bounds.max_x)
-        .saturating_add(1 + TRIANGLE_SCANLINE_NARROWING_GUARD_PX)
-        .min(bounds.max_x)
-        .max(start_x);
-    if start_x >= end_x {
-        return (bounds.min_x, bounds.max_x);
+        let start_x = f32_to_usize_floor_clamped(min_x - 0.5, bounds.max_x)
+            .max(bounds.min_x)
+            .saturating_sub(TRIANGLE_SCANLINE_NARROWING_GUARD_PX)
+            .max(bounds.min_x);
+        let end_x = f32_to_usize_ceil_clamped(max_x - 0.5, bounds.max_x)
+            .saturating_add(1 + TRIANGLE_SCANLINE_NARROWING_GUARD_PX)
+            .min(bounds.max_x)
+            .max(start_x);
+        if start_x >= end_x {
+            return (bounds.min_x, bounds.max_x);
+        }
+        (start_x, end_x)
     }
-    (start_x, end_x)
 }
 
 #[cfg(all(test, target_arch = "aarch64", target_endian = "little"))]
