@@ -122,7 +122,7 @@ mod surface;
 mod texture;
 
 pub use color::Color;
-pub use error::Error;
+pub use error::{Error, VertexField};
 pub use geometry::{ClipRect, Rect, Vertex};
 pub use renderer::{Frame, Mesh, SoftwareRenderer};
 pub use surface::{MAX_SURFACE_PIXELS, SoftwareSurface};

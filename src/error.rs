@@ -46,6 +46,13 @@ pub enum Error {
     TextureUpdateOutOfBounds(TextureId),
     /// A rectangle coordinate is NaN or infinite.
     NonFiniteRect,
+    /// A mesh vertex has a NaN or infinite position or texture coordinate.
+    NonFiniteVertex {
+        /// Index of the vertex in [`Mesh::vertices`](crate::Mesh::vertices).
+        index: usize,
+        /// Which of its coordinates is not finite.
+        field: VertexField,
+    },
     /// A mesh's index count is not a multiple of three.
     IndexCount(usize),
     /// A mesh index points past the end of its vertices.
@@ -86,6 +93,9 @@ impl fmt::Display for Error {
                 write!(f, "update region exceeds the bounds of texture {texture}")
             }
             Self::NonFiniteRect => f.write_str("rectangle has a non-finite coordinate"),
+            Self::NonFiniteVertex { index, field } => {
+                write!(f, "mesh vertex {index} has a non-finite {field}")
+            }
             Self::IndexCount(count) => {
                 write!(f, "mesh has {count} indices, not a multiple of three")
             }
@@ -102,6 +112,24 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// The part of a [`Vertex`](crate::Vertex) an [`Error::NonFiniteVertex`] refers to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VertexField {
+    /// [`Vertex::pos`](crate::Vertex::pos).
+    Position,
+    /// [`Vertex::uv`](crate::Vertex::uv).
+    Uv,
+}
+
+impl fmt::Display for VertexField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Position => "position",
+            Self::Uv => "texture coordinate",
+        })
+    }
+}
 
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {

@@ -5,7 +5,7 @@
 
 use dream_soft_render::{
     ClipRect, Color, Error, MAX_SURFACE_PIXELS, MAX_TEXTURE_BYTES, Mesh, Rect, SoftwareRenderer,
-    Vertex,
+    Vertex, VertexField,
 };
 
 const GOLDEN_SCENE_HASH: u64 = 0xdcb5_803b_00db_a499;
@@ -331,4 +331,52 @@ fn texture_handles_do_not_alias_across_renderers() {
     first
         .free_texture(first_texture)
         .expect("own texture frees");
+}
+
+#[test]
+fn non_finite_vertices_are_rejected() {
+    let mut renderer = SoftwareRenderer::default();
+    let mut frame = renderer.begin_frame(8, 8).expect("frame");
+    frame.clear(Color::BLACK);
+    let before = frame.surface().pixels.clone();
+    let good = Vertex::new([1.0, 1.0], [0.0, 0.0], Color::WHITE);
+    let cases = [
+        (
+            Vertex::new([f32::NAN, 1.0], [0.0, 0.0], Color::WHITE),
+            VertexField::Position,
+        ),
+        (
+            Vertex::new([1.0, f32::INFINITY], [0.0, 0.0], Color::WHITE),
+            VertexField::Position,
+        ),
+        (
+            Vertex::new([1.0, 1.0], [f32::NEG_INFINITY, 0.0], Color::WHITE),
+            VertexField::Uv,
+        ),
+        (
+            Vertex::new([1.0, 1.0], [0.0, f32::NAN], Color::WHITE),
+            VertexField::Uv,
+        ),
+    ];
+    for (bad, field) in cases {
+        // The bad vertex is not referenced by any triangle; it is still malformed input.
+        let vertices = [
+            good,
+            Vertex::new([7.0, 1.0], [0.0, 0.0], Color::WHITE),
+            good,
+            bad,
+        ];
+        assert_eq!(
+            frame.mesh(
+                Mesh {
+                    vertices: &vertices,
+                    indices: &[0, 1, 2],
+                    texture: None,
+                },
+                ClipRect::ALL,
+            ),
+            Err(Error::NonFiniteVertex { index: 3, field })
+        );
+    }
+    assert_eq!(frame.surface().pixels, before);
 }

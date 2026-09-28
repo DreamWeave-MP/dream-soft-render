@@ -249,8 +249,9 @@ impl Frame<'_> {
     /// # Errors
     ///
     /// [`Error::IndexCount`] if the index count is not a multiple of three,
-    /// [`Error::IndexOutOfRange`] for an index past the vertices, and
-    /// [`Error::UnknownTexture`] for a freed or foreign texture.
+    /// [`Error::IndexOutOfRange`] for an index past the vertices,
+    /// [`Error::NonFiniteVertex`] for a NaN or infinite position or texture coordinate on any
+    /// vertex, referenced or not, and [`Error::UnknownTexture`] for a freed or foreign texture.
     pub fn mesh(&mut self, mesh: Mesh<'_>, clip: ClipRect) -> Result<(), Error> {
         if !mesh.indices.len().is_multiple_of(3) {
             return Err(Error::IndexCount(mesh.indices.len()));
@@ -265,6 +266,14 @@ impl Frame<'_> {
                 index,
                 vertex_count,
             });
+        }
+        if let Some((index, field)) = mesh
+            .vertices
+            .iter()
+            .enumerate()
+            .find_map(|(index, vertex)| Some((index, vertex.non_finite_field()?)))
+        {
+            return Err(Error::NonFiniteVertex { index, field });
         }
         if let Some(texture) = mesh.texture {
             self.check_texture(texture)?;

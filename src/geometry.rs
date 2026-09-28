@@ -12,7 +12,8 @@ use crate::Color;
 pub struct Vertex {
     /// Position in surface pixels; see the crate docs for the coordinate conventions.
     pub pos: [f32; 2],
-    /// Texture coordinate, `0.0..=1.0` across the texture. Ignored for untextured meshes.
+    /// Texture coordinate, `0.0..=1.0` across the texture. Untextured meshes sample white
+    /// wherever it points, but it must still be finite.
     pub uv: [f32; 2],
     /// Premultiplied color, multiplied with the sampled texel.
     pub color: Color,
@@ -25,6 +26,18 @@ impl Vertex {
     #[must_use]
     pub const fn new(pos: [f32; 2], uv: [f32; 2], color: Color) -> Self {
         Self { pos, uv, color }
+    }
+
+    /// The first coordinate that is NaN or infinite, if any. The color cannot be invalid:
+    /// every bit pattern is a color.
+    pub(crate) fn non_finite_field(self) -> Option<crate::VertexField> {
+        if !self.pos.iter().all(|value| value.is_finite()) {
+            Some(crate::VertexField::Position)
+        } else if !self.uv.iter().all(|value| value.is_finite()) {
+            Some(crate::VertexField::Uv)
+        } else {
+            None
+        }
     }
 
     pub(crate) const fn to_egui(self) -> egui::epaint::Vertex {
