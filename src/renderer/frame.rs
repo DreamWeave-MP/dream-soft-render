@@ -4,14 +4,16 @@ use super::{
     MeshRasterContext, SOLID_FAN_POLYGON_SCRATCH_CAPACITY, SoftwareRenderer,
     rasterize_mesh_contents,
 };
+use crate::geometry::RasterMesh;
 use crate::raster::ClipBounds;
 use crate::surface::SoftwareSurface;
-use crate::texture::{EMPTY_TEXTURE, TextureId};
+use crate::texture::{EMPTY_TEXTURE, TextureId, TextureKey};
 use crate::{ClipRect, Color, Error, Rect, Vertex};
 
 /// Triangles to draw with [`Frame::mesh`].
 ///
-/// Every three `indices` name one triangle's vertices. The data is borrowed for the call only.
+/// Every three `indices` name one triangle's vertices. The rasterizer reads the slices where they
+/// lie for the duration of the call: nothing is copied, and nothing is kept afterwards.
 #[derive(Clone, Copy, Debug)]
 pub struct Mesh<'a> {
     /// The vertices.
@@ -104,7 +106,7 @@ impl SoftwareRenderer {
 
     fn rasterize_frame_mesh(
         &mut self,
-        mesh: &egui::Mesh,
+        mesh: RasterMesh<'_>,
         texture: Option<TextureId>,
         clip: ClipBounds,
     ) -> Result<(), Error> {
@@ -112,7 +114,7 @@ impl SoftwareRenderer {
             None => &EMPTY_TEXTURE,
             Some(id) => self
                 .textures
-                .get(&id.to_egui())
+                .get(&TextureKey::Native(id))
                 .ok_or(Error::UnknownTexture(id))?,
         };
         if clip.is_empty() {
@@ -280,22 +282,23 @@ impl Frame<'_> {
         }
         let renderer = &mut *self.renderer;
         let clip = clip.to_bounds(renderer.surface.width, renderer.surface.height);
-        let mut scratch = std::mem::take(&mut renderer.mesh_scratch);
-        scratch.clear();
-        scratch.texture_id = mesh
-            .texture
-            .map_or(egui::TextureId::default(), TextureId::to_egui);
-        scratch
-            .vertices
-            .extend(mesh.vertices.iter().map(|vertex| vertex.to_egui()));
-        scratch.indices.extend_from_slice(mesh.indices);
-        let result = renderer.rasterize_frame_mesh(&scratch, mesh.texture, clip);
-        renderer.mesh_scratch = scratch;
-        result
+        renderer.rasterize_frame_mesh(
+            RasterMesh {
+                vertices: mesh.vertices,
+                indices: mesh.indices,
+            },
+            mesh.texture,
+            clip,
+        )
     }
 
     fn check_texture(&self, texture: TextureId) -> Result<(), Error> {
-        if self.renderer.textures.get(&texture.to_egui()).is_some() {
+        if self
+            .renderer
+            .textures
+            .get(&TextureKey::Native(texture))
+            .is_some()
+        {
             Ok(())
         } else {
             Err(Error::UnknownTexture(texture))

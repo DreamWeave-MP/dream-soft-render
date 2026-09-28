@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
+use crate::geometry::Pos2;
 use std::fmt;
 use std::time::Instant;
 
@@ -265,7 +267,7 @@ pub(super) struct TriangleSource {
 
 #[derive(Clone, Copy)]
 struct GenericTriangleBboxRecord<'a> {
-    vertices: [&'a egui::epaint::Vertex; 3],
+    vertices: [&'a Vertex; 3],
     texture: &'a TextureImage,
     classification: TriangleClassification,
     texel_sample: Option<TriangleTexelSample>,
@@ -278,7 +280,7 @@ struct SolidTriangleOffender {
     clipped_bbox_px: usize,
     bounds: TriangleRasterBounds,
     source: TriangleSource,
-    positions: [egui::Pos2; 3],
+    positions: [Pos2; 3],
 }
 
 #[derive(Debug, Default)]
@@ -295,8 +297,8 @@ struct TexturedTriangleOffender {
     scan_work: TriangleScanWorkEstimate,
     bounds: TriangleRasterBounds,
     source: TriangleSource,
-    positions: [egui::Pos2; 3],
-    uvs: [egui::Pos2; 3],
+    positions: [Pos2; 3],
+    uvs: [Pos2; 3],
     texel_sample: TriangleTexelSample,
 }
 
@@ -320,8 +322,8 @@ struct TexturedQuadRejectOffender {
     rejection: TexturedQuadFastPathRejection,
     work: TexturedQuadRejectWorkEstimate,
     source: TriangleSource,
-    positions: [egui::Pos2; 6],
-    uvs: [egui::Pos2; 6],
+    positions: [Pos2; 6],
+    uvs: [Pos2; 6],
     alphas: [u8; 6],
     uniform_color: bool,
     first_texel_sample: TriangleTexelSample,
@@ -664,11 +666,7 @@ impl fmt::Display for TriangleBboxBuckets {
 }
 
 impl PrimitiveStats {
-    pub(super) fn record_quad_window(
-        &mut self,
-        vertices: [&egui::epaint::Vertex; 6],
-        texture: &TextureImage,
-    ) {
+    pub(super) fn record_quad_window(&mut self, vertices: [&Vertex; 6], texture: &TextureImage) {
         if !is_axis_aligned_quad(vertices) {
             return;
         }
@@ -684,9 +682,9 @@ impl PrimitiveStats {
 
     pub(super) fn record_generic_triangle(
         &mut self,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
         texture: &TextureImage,
         clip: ClipBounds,
         source: TriangleSource,
@@ -736,12 +734,12 @@ impl PrimitiveStats {
         if classification == TriangleClassification::Degenerate {
             return;
         }
-        if !v0.pos.x.is_finite()
-            || !v0.pos.y.is_finite()
-            || !v1.pos.x.is_finite()
-            || !v1.pos.y.is_finite()
-            || !v2.pos.x.is_finite()
-            || !v2.pos.y.is_finite()
+        if !v0.pos2().x.is_finite()
+            || !v0.pos2().y.is_finite()
+            || !v1.pos2().x.is_finite()
+            || !v1.pos2().y.is_finite()
+            || !v2.pos2().x.is_finite()
+            || !v2.pos2().y.is_finite()
         {
             self.generic_triangle_bbox_non_finite += 1;
             return;
@@ -766,7 +764,7 @@ impl PrimitiveStats {
                     clipped_bbox_px,
                     bounds,
                     source: record.source,
-                    positions: [v0.pos, v1.pos, v2.pos],
+                    positions: [v0.pos2(), v1.pos2(), v2.pos2()],
                 });
             }
             TriangleClassification::Textured => {
@@ -789,7 +787,7 @@ impl PrimitiveStats {
                 }
                 self.generic_textured_triangle_bbox_px_buckets
                     .record(clipped_bbox_px);
-                let positions = [v0.pos, v1.pos, v2.pos];
+                let positions = [v0.pos2(), v1.pos2(), v2.pos2()];
                 self.textured_triangle_offenders
                     .record(TexturedTriangleOffender {
                         clipped_bbox_px,
@@ -797,7 +795,7 @@ impl PrimitiveStats {
                         bounds,
                         source: record.source,
                         positions,
-                        uvs: [v0.uv, v1.uv, v2.uv],
+                        uvs: [v0.uv2(), v1.uv2(), v2.uv2()],
                         texel_sample,
                     });
             }
@@ -807,7 +805,7 @@ impl PrimitiveStats {
     pub(super) fn record_textured_quad_rejection(
         &mut self,
         rejection: TexturedQuadFastPathRejection,
-        vertices: [&egui::epaint::Vertex; 6],
+        vertices: [&Vertex; 6],
         texture: &TextureImage,
         clip: ClipBounds,
         source: TriangleSource,
@@ -1063,7 +1061,7 @@ fn format_textured_triangle_offender(index: usize, offender: TexturedTriangleOff
 
 fn textured_quad_reject_offender(
     rejection: TexturedQuadFastPathRejection,
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
     texture: &TextureImage,
     clip: ClipBounds,
     source: TriangleSource,
@@ -1074,9 +1072,9 @@ fn textured_quad_reject_offender(
         rejection,
         work: textured_quad_reject_work(vertices, first_bounds, second_bounds),
         source,
-        positions: vertices.map(|vertex| vertex.pos),
-        uvs: vertices.map(|vertex| vertex.uv),
-        alphas: vertices.map(|vertex| vertex.color.a()),
+        positions: vertices.map(Vertex::pos2),
+        uvs: vertices.map(Vertex::uv2),
+        alphas: vertices.map(|vertex| vertex.color.a),
         uniform_color: vertices
             .iter()
             .all(|vertex| vertex.color == vertices[0].color),
@@ -1096,17 +1094,23 @@ fn textured_quad_reject_offender(
 }
 
 fn textured_quad_reject_work(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
     first_bounds: Option<TriangleRasterBounds>,
     second_bounds: Option<TriangleRasterBounds>,
 ) -> TexturedQuadRejectWorkEstimate {
     let first_px = first_bounds.map_or(0, |bounds| {
-        estimate_triangle_scan_work([vertices[0].pos, vertices[1].pos, vertices[2].pos], bounds)
-            .candidate_px
+        estimate_triangle_scan_work(
+            [vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2()],
+            bounds,
+        )
+        .candidate_px
     });
     let second_px = second_bounds.map_or(0, |bounds| {
-        estimate_triangle_scan_work([vertices[3].pos, vertices[4].pos, vertices[5].pos], bounds)
-            .candidate_px
+        estimate_triangle_scan_work(
+            [vertices[3].pos2(), vertices[4].pos2(), vertices[5].pos2()],
+            bounds,
+        )
+        .candidate_px
     });
     let bounds = union_raster_bounds(first_bounds, second_bounds);
     TexturedQuadRejectWorkEstimate {
@@ -1272,7 +1276,8 @@ fn format_texel_rgba(color: Option<[u8; 4]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raster::usize_to_f32;
+    use crate::Color;
+    use crate::geometry::pos2;
 
     #[test]
     fn primitive_stats_classifies_axis_aligned_solid_and_textured_quads() {
@@ -1285,7 +1290,7 @@ mod tests {
         };
         let solid_vertices = quad_vertices();
         let mut textured_vertices = quad_vertices();
-        textured_vertices[1].uv = egui::pos2(1.0, 0.0);
+        textured_vertices[1].uv = [1.0, 0.0];
 
         let mut stats = PrimitiveStats::default();
         stats.record_quad_window(
@@ -1330,7 +1335,7 @@ mod tests {
         let mut stats = PrimitiveStats::default();
 
         stats.record_generic_triangle(&v0, &v1, &v2, &texture, clip, triangle_source(1, 0));
-        v2.color = egui::Color32::BLACK;
+        v2.color = Color::BLACK;
         stats.record_generic_triangle(&v0, &v1, &v2, &texture, clip, triangle_source(1, 3));
         stats.record_generic_triangle(&v0, &v1, &v0, &texture, clip, triangle_source(1, 6));
 
@@ -1430,7 +1435,7 @@ mod tests {
         let v0 = test_vertex(0.0, 0.0);
         let v1 = test_vertex(2.0, 0.0);
         let mut v2 = test_vertex(0.0, 2.0);
-        v2.color = egui::Color32::BLACK;
+        v2.color = Color::BLACK;
         let mut stats = PrimitiveStats::default();
 
         stats.record_generic_triangle(
@@ -1464,10 +1469,10 @@ mod tests {
         let mut v0 = test_vertex(0.0, 0.0);
         let mut v1 = test_vertex(2.0, 0.0);
         let mut v2 = test_vertex(0.0, 2.0);
-        v0.uv = egui::pos2(0.0, 0.0);
-        v1.uv = egui::pos2(1.0, 0.0);
-        v2.uv = egui::pos2(0.0, 0.0);
-        v2.color = egui::Color32::BLACK;
+        v0.uv = [0.0, 0.0];
+        v1.uv = [1.0, 0.0];
+        v2.uv = [0.0, 0.0];
+        v2.color = Color::BLACK;
         let mut stats = PrimitiveStats::default();
 
         stats.record_generic_triangle(
@@ -1501,9 +1506,9 @@ mod tests {
         let mut v0 = test_vertex(0.0, 0.0);
         let mut v1 = test_vertex(2.0, 0.0);
         let mut v2 = test_vertex(0.0, 2.0);
-        v0.uv = egui::pos2(0.0, 0.0);
-        v1.uv = egui::pos2(1.0, 0.0);
-        v2.uv = egui::pos2(0.0, 0.0);
+        v0.uv = [0.0, 0.0];
+        v1.uv = [1.0, 0.0];
+        v2.uv = [0.0, 0.0];
         let mut stats = PrimitiveStats::default();
 
         stats.record_generic_triangle(
@@ -1537,7 +1542,7 @@ mod tests {
         let v0 = test_vertex(0.0, 0.0);
         let v1 = test_vertex(33.0, 0.0);
         let mut v2 = test_vertex(0.0, 33.0);
-        v2.color = egui::Color32::BLACK;
+        v2.color = Color::BLACK;
         let clip = clip_bounds(64, 64);
         let mut stats = PrimitiveStats::default();
 
@@ -1564,7 +1569,7 @@ mod tests {
         let v0 = test_vertex(-4096.0, -4096.0);
         let v1 = test_vertex(8.0, 0.0);
         let mut v2 = test_vertex(0.0, 8.0);
-        v2.color = egui::Color32::BLACK;
+        v2.color = Color::BLACK;
         let mut stats = PrimitiveStats::default();
 
         stats.record_generic_triangle(
@@ -1720,11 +1725,7 @@ mod tests {
                     max_y: 5,
                 },
                 source: triangle_source(7, 12),
-                positions: [
-                    egui::pos2(1.25, 2.5),
-                    egui::pos2(3.0, 4.0),
-                    egui::pos2(5.0, 6.75),
-                ],
+                positions: [pos2(1.25, 2.5), pos2(3.0, 4.0), pos2(5.0, 6.75)],
             });
 
         assert_eq!(
@@ -1832,16 +1833,8 @@ mod tests {
                     max_y: 5,
                 },
                 source: triangle_source(7, 12),
-                positions: [
-                    egui::pos2(1.25, 2.5),
-                    egui::pos2(3.0, 4.0),
-                    egui::pos2(5.0, 6.75),
-                ],
-                uvs: [
-                    egui::pos2(0.0, 0.5),
-                    egui::pos2(1.0, 0.25),
-                    egui::pos2(0.75, 1.0),
-                ],
+                positions: [pos2(1.25, 2.5), pos2(3.0, 4.0), pos2(5.0, 6.75)],
+                uvs: [pos2(0.0, 0.5), pos2(1.0, 0.25), pos2(0.75, 1.0)],
                 texel_sample: TriangleTexelSample {
                     texels: Some([(0, 1), (2, 3), (4, 5)]),
                     uniform_color: None,
@@ -1936,20 +1929,20 @@ mod tests {
                 },
                 source: triangle_source(7, 12),
                 positions: [
-                    egui::pos2(1.25, 2.5),
-                    egui::pos2(3.0, 4.0),
-                    egui::pos2(5.0, 6.75),
-                    egui::pos2(7.0, 8.0),
-                    egui::pos2(9.0, 10.0),
-                    egui::pos2(11.0, 12.0),
+                    pos2(1.25, 2.5),
+                    pos2(3.0, 4.0),
+                    pos2(5.0, 6.75),
+                    pos2(7.0, 8.0),
+                    pos2(9.0, 10.0),
+                    pos2(11.0, 12.0),
                 ],
                 uvs: [
-                    egui::pos2(0.0, 0.5),
-                    egui::pos2(1.0, 0.25),
-                    egui::pos2(0.75, 1.0),
-                    egui::pos2(0.1, 0.2),
-                    egui::pos2(0.3, 0.4),
-                    egui::pos2(0.5, 0.6),
+                    pos2(0.0, 0.5),
+                    pos2(1.0, 0.25),
+                    pos2(0.75, 1.0),
+                    pos2(0.1, 0.2),
+                    pos2(0.3, 0.4),
+                    pos2(0.5, 0.6),
                 ],
                 alphas: [255, 254, 253, 252, 251, 250],
                 uniform_color: false,
@@ -2101,7 +2094,7 @@ mod tests {
         assert_eq!(timings.generic_degenerate_triangle, 11);
     }
 
-    fn quad_vertices() -> [egui::epaint::Vertex; 4] {
+    fn quad_vertices() -> [Vertex; 4] {
         [
             test_vertex(1.0, 1.0),
             test_vertex(4.0, 1.0),
@@ -2111,15 +2104,7 @@ mod tests {
     }
 
     fn clip_bounds(width: usize, height: usize) -> ClipBounds {
-        ClipBounds::new(
-            egui::Rect::from_min_max(
-                egui::Pos2::ZERO,
-                egui::pos2(usize_to_f32(width), usize_to_f32(height)),
-            ),
-            width,
-            height,
-        )
-        .expect("clip bounds")
+        ClipBounds::full(width, height)
     }
 
     fn triangle_bucket_total(buckets: &TriangleBboxBuckets) -> usize {
@@ -2147,7 +2132,7 @@ mod tests {
                 max_y: 1,
             },
             source: triangle_source(primitive_index, mesh_index_offset),
-            positions: [egui::Pos2::ZERO; 3],
+            positions: [Pos2::ZERO; 3],
         }
     }
 
@@ -2171,8 +2156,8 @@ mod tests {
                 max_y: 1,
             },
             source: triangle_source(primitive_index, mesh_index_offset),
-            positions: [egui::Pos2::ZERO; 3],
-            uvs: [egui::Pos2::ZERO; 3],
+            positions: [Pos2::ZERO; 3],
+            uvs: [Pos2::ZERO; 3],
             texel_sample: TriangleTexelSample {
                 texels: Some([(0, 0), (0, 0), (0, 0)]),
                 uniform_color: Some([255, 255, 255, 255]),
@@ -2199,8 +2184,8 @@ mod tests {
                 }),
             },
             source: triangle_source(primitive_index, mesh_index_offset),
-            positions: [egui::Pos2::ZERO; 6],
-            uvs: [egui::Pos2::ZERO; 6],
+            positions: [Pos2::ZERO; 6],
+            uvs: [Pos2::ZERO; 6],
             alphas: [255; 6],
             uniform_color: true,
             first_texel_sample: TriangleTexelSample {
@@ -2252,11 +2237,11 @@ mod tests {
         }
     }
 
-    fn test_vertex(x: f32, y: f32) -> egui::epaint::Vertex {
-        egui::epaint::Vertex {
-            pos: egui::pos2(x, y),
-            uv: egui::Pos2::ZERO,
-            color: egui::Color32::WHITE,
+    fn test_vertex(x: f32, y: f32) -> Vertex {
+        Vertex {
+            pos: [x, y],
+            uv: [0.0, 0.0],
+            color: Color::WHITE,
         }
     }
 }

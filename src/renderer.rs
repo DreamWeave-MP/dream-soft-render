@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
+use crate::geometry::RasterMesh;
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -19,8 +21,8 @@ use super::render_benchmark::{
     SampledRectModulatedWorkload, SampledRectModulatedWorkloadStats, background_color,
 };
 use super::surface::SoftwareSurface;
-use super::texture::{TextureDeltaStats, TextureImage, TextureStore};
-use crate::egui_adapter::format_repaint_delay;
+use super::texture::{TextureDeltaStats, TextureImage, TextureKey, TextureStore};
+use crate::egui_adapter::{format_repaint_delay, raster_mesh_from_egui, vertices_from_egui};
 use fan::{
     FanBoundaryKey, SOLID_FAN_MIN_TRIANGLES, SolidFanPolygonScratch, SolidFanRun, solid_fan_run,
 };
@@ -89,8 +91,6 @@ pub struct SoftwareRenderer {
     // Primitives last rasterized into `surface`, valid only while `previous_frame_valid`.
     previous_primitives: Vec<egui::ClippedPrimitive>,
     previous_frame_valid: bool,
-    // Reused conversion buffer for meshes drawn through `Frame`.
-    mesh_scratch: egui::Mesh,
 }
 
 const SOLID_FAN_POLYGON_SCRATCH_CAPACITY: usize = 4096;
@@ -106,7 +106,6 @@ impl Default for SoftwareRenderer {
             skip_unchanged_frames: true,
             previous_primitives: Vec::new(),
             previous_frame_valid: false,
-            mesh_scratch: egui::Mesh::default(),
         }
     }
 }
@@ -208,7 +207,7 @@ impl SoftwareRenderer {
 
         let stage_start = log_timings.then(Instant::now);
         for id in output.textures_delta.free {
-            self.textures.free(id);
+            self.textures.free_egui(id);
         }
         let texture_free_elapsed = elapsed_micros(stage_start);
         let texture_evidence = self.texture_evidence(&texture_delta_stats);
@@ -371,17 +370,7 @@ impl SoftwareRenderer {
             stats.mesh_primitives += 1;
             stats.mesh_indices += workload.mesh().indices.len();
         }
-        let clip = ClipBounds::new(
-            egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(
-                    usize_to_f32(self.surface.width),
-                    usize_to_f32(self.surface.height),
-                ),
-            ),
-            self.surface.width,
-            self.surface.height,
-        )?;
+        let clip = ClipBounds::full(self.surface.width, self.surface.height);
         let mut context = MeshRasterContext {
             surface: &mut self.surface,
             fan_polygon_scratch: &mut self.solid_fan_polygon_scratch,
@@ -415,11 +404,14 @@ impl SoftwareRenderer {
                 stats.reject_first_visible_not_rect = 1;
                 return stats;
             };
-            let Some(texture) = self.textures.get(&mesh.texture_id) else {
+            let Some(texture) = self
+                .textures
+                .get(&TextureKey::for_egui_mesh(mesh.texture_id))
+            else {
                 continue;
             };
             let Ok(clip) =
-                ClipBounds::new(primitive.clip_rect, self.surface.width, self.surface.height)
+                egui_clip_bounds(primitive.clip_rect, self.surface.width, self.surface.height)
             else {
                 stats.reject_first_visible_not_rect = 1;
                 return stats;
@@ -428,7 +420,7 @@ impl SoftwareRenderer {
                 continue;
             }
             let Some(evidence) = probe_mesh_clear_elision(
-                mesh,
+                raster_mesh_from_egui(mesh),
                 texture,
                 clip,
                 self.surface.width,
@@ -493,13 +485,16 @@ impl SoftwareRenderer {
         if let Some(stats) = borrow_optional_mut(&mut stats) {
             stats.mesh_indices += mesh.indices.len();
         }
-        let Some(texture) = self.textures.get(&mesh.texture_id) else {
+        let Some(texture) = self
+            .textures
+            .get(&TextureKey::for_egui_mesh(mesh.texture_id))
+        else {
             if let Some(stats) = borrow_optional_mut(&mut stats) {
                 stats.missing_texture_meshes += 1;
             }
             return Ok(());
         };
-        let clip = ClipBounds::new(clip_rect, self.surface.width, self.surface.height)?;
+        let clip = egui_clip_bounds(clip_rect, self.surface.width, self.surface.height)?;
         if clip.is_empty() {
             if let Some(stats) = borrow_optional_mut(&mut stats) {
                 stats.empty_clip_meshes += 1;
@@ -513,7 +508,7 @@ impl SoftwareRenderer {
             fan_polygon_scratch: &mut self.solid_fan_polygon_scratch,
             fan_seen_boundary_scratch: &mut self.solid_fan_seen_boundary_scratch,
             fan_span_cache: &mut self.solid_fan_span_cache,
-            mesh,
+            mesh: raster_mesh_from_egui(mesh),
             texture,
             clip,
             primitive_index,
@@ -560,7 +555,7 @@ struct MeshRasterContext<'a> {
     fan_polygon_scratch: &'a mut Vec<usize>,
     fan_seen_boundary_scratch: &'a mut Vec<FanBoundaryKey>,
     fan_span_cache: &'a mut SolidFanSpanCache,
-    mesh: &'a egui::Mesh,
+    mesh: RasterMesh<'a>,
     texture: &'a TextureImage,
     clip: ClipBounds,
     primitive_index: usize,
@@ -752,20 +747,7 @@ fn synthetic_clear_elision_stats(
     surface_width: usize,
     surface_height: usize,
 ) -> ClearElisionFrameStats {
-    let Ok(clip) = ClipBounds::new(
-        egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::vec2(usize_to_f32(surface_width), usize_to_f32(surface_height)),
-        ),
-        surface_width,
-        surface_height,
-    ) else {
-        return ClearElisionFrameStats {
-            probe_frames: 1,
-            reject_first_visible_not_rect: 1,
-            ..Default::default()
-        };
-    };
+    let clip = ClipBounds::full(surface_width, surface_height);
     let evidence = mesh_quad_vertices(workload.mesh(), &workload.mesh().indices[..6])
         .ok()
         .flatten()
@@ -889,7 +871,7 @@ fn clear_evidence_log_line(
 }
 
 fn probe_mesh_clear_elision(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     texture: &TextureImage,
     clip: ClipBounds,
     surface_width: usize,
@@ -942,9 +924,9 @@ fn probe_mesh_clear_elision(
 }
 
 fn mesh_quad_vertices<'a>(
-    mesh: &'a egui::Mesh,
+    mesh: RasterMesh<'a>,
     quad: &[u32],
-) -> io::Result<Option<[&'a egui::epaint::Vertex; 6]>> {
+) -> io::Result<Option<[&'a Vertex; 6]>> {
     let i0 = mesh_index_to_usize(quad[0])?;
     let i1 = mesh_index_to_usize(quad[1])?;
     let i2 = mesh_index_to_usize(quad[2])?;
@@ -1111,9 +1093,9 @@ impl MeshRasterContext<'_> {
 }
 
 fn mesh_triangle_vertices(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     index_offset: usize,
-) -> io::Result<Option<[&egui::epaint::Vertex; 3]>> {
+) -> io::Result<Option<[&Vertex; 3]>> {
     let triangle = &mesh.indices[index_offset..index_offset + 3];
     let i0 = mesh_index_to_usize(triangle[0])?;
     let i1 = mesh_index_to_usize(triangle[1])?;
@@ -1132,7 +1114,7 @@ fn mesh_triangle_vertices(
 
 fn rasterize_generic_triangle(
     surface: &mut SoftwareSurface,
-    vertices: [&egui::epaint::Vertex; 3],
+    vertices: [&Vertex; 3],
     texture: &TextureImage,
     clip: ClipBounds,
     raster_stats: &mut Option<&mut RasterStats>,
@@ -1181,12 +1163,12 @@ fn rasterize_solid_fan_run(
     let fan_bounds = instrumentation
         .primitive_stats
         .as_ref()
-        .and_then(|_| polygon_raster_bounds(&mesh.vertices, &fan_polygon[..fan.polygon_len], clip));
+        .and_then(|_| polygon_raster_bounds(mesh.vertices, &fan_polygon[..fan.polygon_len], clip));
     let fan_start = instrumentation.timing_start();
     rasterize_solid_fan_with_cache(
         surface,
         SolidFanRasterParams {
-            vertices: &mesh.vertices,
+            vertices: mesh.vertices,
             polygon: &fan_polygon[..fan.polygon_len],
             triangle_count: fan.triangle_count,
             color: fan.color,
@@ -1225,7 +1207,7 @@ fn rasterize_solid_fan_run(
 
 struct SolidFanRasterRunContext<'a> {
     surface: &'a mut SoftwareSurface,
-    mesh: &'a egui::Mesh,
+    mesh: RasterMesh<'a>,
     fan_span_cache: &'a mut SolidFanSpanCache,
     clip: ClipBounds,
     source: TriangleSource,
@@ -1266,24 +1248,29 @@ fn same_primitives(
     current: &[egui::ClippedPrimitive],
 ) -> bool {
     fn same_rect(left: egui::Rect, right: egui::Rect) -> bool {
-        same_pos_bits(left.min, right.min) && same_pos_bits(left.max, right.max)
-    }
-    fn same_pos_bits(left: egui::Pos2, right: egui::Pos2) -> bool {
-        left.x.to_bits() == right.x.to_bits() && left.y.to_bits() == right.y.to_bits()
+        let bits =
+            |rect: egui::Rect| [rect.min.x, rect.min.y, rect.max.x, rect.max.y].map(f32::to_bits);
+        bits(left) == bits(right)
     }
     fn same_mesh(left: &egui::Mesh, right: &egui::Mesh) -> bool {
+        let bits = |vertex: &Vertex| {
+            (
+                vertex.pos.map(f32::to_bits),
+                vertex.uv.map(f32::to_bits),
+                vertex.color,
+            )
+        };
+        let (left_vertices, right_vertices) = (
+            vertices_from_egui(&left.vertices),
+            vertices_from_egui(&right.vertices),
+        );
         left.texture_id == right.texture_id
             && left.indices == right.indices
-            && left.vertices.len() == right.vertices.len()
-            && left
-                .vertices
+            && left_vertices.len() == right_vertices.len()
+            && left_vertices
                 .iter()
-                .zip(&right.vertices)
-                .all(|(left, right)| {
-                    same_pos_bits(left.pos, right.pos)
-                        && same_pos_bits(left.uv, right.uv)
-                        && left.color == right.color
-                })
+                .zip(right_vertices)
+                .all(|(left, right)| bits(left) == bits(right))
     }
     previous.len() == current.len()
         && previous.iter().zip(current).all(|(previous, current)| {
@@ -1295,6 +1282,16 @@ fn same_primitives(
                     _ => false,
                 }
         })
+}
+
+/// An egui clip rectangle as pixel bounds: grown outward to whole pixels, clamped to the
+/// surface, and an error if any edge is not finite.
+fn egui_clip_bounds(rect: egui::Rect, width: usize, height: usize) -> io::Result<ClipBounds> {
+    ClipBounds::from_float_edges(
+        [rect.min.x, rect.min.y, rect.max.x, rect.max.y],
+        width,
+        height,
+    )
 }
 
 fn mesh_index_to_usize(index: u32) -> io::Result<usize> {
@@ -1323,6 +1320,8 @@ fn borrow_optional_mut<'a, T>(option: &'a mut Option<&mut T>) -> Option<&'a mut 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Color;
+    use crate::geometry::pos2;
 
     #[test]
     fn coarse_frame_logging_does_not_enable_deep_stats_collection() {
@@ -1471,7 +1470,10 @@ mod tests {
             .expect("rasterize mesh");
         let fan_pixels = renderer.surface.pixels.clone();
 
-        let texture = renderer.textures.get(&texture_id).expect("stored texture");
+        let texture = renderer
+            .textures
+            .get(&TextureKey::Egui(texture_id))
+            .expect("stored texture");
         let reference = render_solid_fan_reference(&mesh, texture, clip_bounds(12, 12));
         assert_eq!(fan_pixels, reference);
         assert_accepted_solid_fan_primitive_stats(&primitive_stats);
@@ -1518,7 +1520,10 @@ mod tests {
             )
             .expect("rasterize mesh");
 
-        let texture = renderer.textures.get(&texture_id).expect("stored texture");
+        let texture = renderer
+            .textures
+            .get(&TextureKey::Egui(texture_id))
+            .expect("stored texture");
         let reference = render_solid_fan_reference(&mesh, texture, clip_bounds(12, 12));
         assert_eq!(renderer.surface.pixels, reference);
         assert_eq!(primitive_stats.solid_fan_probe.probe_calls, 0);
@@ -1560,7 +1565,10 @@ mod tests {
             )
             .expect("rasterize mesh");
 
-        let texture = renderer.textures.get(&texture_id).expect("stored texture");
+        let texture = renderer
+            .textures
+            .get(&TextureKey::Egui(texture_id))
+            .expect("stored texture");
         let reference = render_solid_fan_reference(&mesh, texture, clip_bounds(12, 12));
         assert_eq!(renderer.surface.pixels, reference);
         assert_eq!(primitive_stats.solid_fan_probe.probe_calls, 1);
@@ -1659,7 +1667,10 @@ mod tests {
         let clip = clip_bounds(12, 12);
         let reference = render_solid_fan_reference(
             &mesh,
-            renderer.textures.get(&texture_id).expect("stored texture"),
+            renderer
+                .textures
+                .get(&TextureKey::Egui(texture_id))
+                .expect("stored texture"),
             clip,
         );
         let mut primitive_stats = PrimitiveStats::default();
@@ -1674,8 +1685,11 @@ mod tests {
                 fan_polygon_scratch: &mut renderer.solid_fan_polygon_scratch,
                 fan_seen_boundary_scratch: &mut renderer.solid_fan_seen_boundary_scratch,
                 fan_span_cache: &mut renderer.solid_fan_span_cache,
-                mesh: &mesh,
-                texture: renderer.textures.get(&texture_id).expect("stored texture"),
+                mesh: raster_mesh_from_egui(&mesh),
+                texture: renderer
+                    .textures
+                    .get(&TextureKey::Egui(texture_id))
+                    .expect("stored texture"),
                 clip,
                 primitive_index: 0,
                 solid_fan_polygon_scratch_budget: 5,
@@ -1698,7 +1712,7 @@ mod tests {
         assert_eq!(raster_stats.solid_fan_calls, 0);
     }
 
-    fn quad_vertices() -> [egui::epaint::Vertex; 4] {
+    fn quad_vertices() -> [Vertex; 4] {
         [
             test_vertex(1.0, 1.0),
             test_vertex(4.0, 1.0),
@@ -1709,13 +1723,13 @@ mod tests {
 
     fn textured_quad_mesh(texture_id: egui::TextureId) -> egui::Mesh {
         let mut vertices = quad_vertices();
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(1.0, 0.0);
-        vertices[2].uv = egui::pos2(0.0, 1.0);
-        vertices[3].uv = egui::pos2(1.0, 1.0);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [1.0, 0.0];
+        vertices[2].uv = [0.0, 1.0];
+        vertices[3].uv = [1.0, 1.0];
         egui::Mesh {
             indices: vec![0, 1, 2, 1, 3, 2],
-            vertices: vertices.to_vec(),
+            vertices: vertices.iter().map(|vertex| vertex.to_egui()).collect(),
             texture_id,
         }
     }
@@ -1728,11 +1742,11 @@ mod tests {
             test_vertex(width, height),
         ];
         for vertex in &mut vertices {
-            vertex.uv = egui::Pos2::ZERO;
+            vertex.uv = [0.0, 0.0];
         }
         egui::Mesh {
             indices: vec![0, 1, 2, 1, 3, 2],
-            vertices: vertices.to_vec(),
+            vertices: vertices.iter().map(|vertex| vertex.to_egui()).collect(),
             texture_id,
         }
     }
@@ -1754,29 +1768,29 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&solid_texture_delta(texture_id, egui::Color32::WHITE))
+            .apply(&solid_texture_delta(texture_id, Color::WHITE))
             .expect("texture");
         renderer
     }
 
     fn solid_fan_mesh(texture_id: egui::TextureId, color: [u8; 4]) -> egui::Mesh {
-        let color = egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
+        let color = Color::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
         let vertices = [
-            egui::pos2(1.0, 5.0),
-            egui::pos2(2.0, 1.0),
-            egui::pos2(6.0, 1.0),
-            egui::pos2(9.0, 3.0),
-            egui::pos2(8.0, 8.0),
-            egui::pos2(3.0, 9.0),
+            pos2(1.0, 5.0),
+            pos2(2.0, 1.0),
+            pos2(6.0, 1.0),
+            pos2(9.0, 3.0),
+            pos2(8.0, 8.0),
+            pos2(3.0, 9.0),
         ]
-        .map(|pos| egui::epaint::Vertex {
-            pos,
-            uv: egui::Pos2::ZERO,
+        .map(|pos| Vertex {
+            pos: [pos.x, pos.y],
+            uv: [0.0, 0.0],
             color,
         });
         egui::Mesh {
             indices: vec![1, 0, 2, 2, 0, 3, 3, 0, 4, 4, 0, 5],
-            vertices: vertices.to_vec(),
+            vertices: vertices.iter().map(|vertex| vertex.to_egui()).collect(),
             texture_id,
         }
     }
@@ -1793,12 +1807,12 @@ mod tests {
             test_vertex(4.0, 5.0),
             test_vertex(1.0, 8.0),
         ];
-        vertices[5].color = egui::Color32::BLACK;
-        vertices[7].uv = egui::pos2(1.0, 0.0);
-        vertices[8].uv = egui::pos2(0.0, 1.0);
+        vertices[5].color = Color::BLACK;
+        vertices[7].uv = [1.0, 0.0];
+        vertices[8].uv = [0.0, 1.0];
         egui::Mesh {
             indices: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
-            vertices: vertices.to_vec(),
+            vertices: vertices.iter().map(|vertex| vertex.to_egui()).collect(),
             texture_id,
         }
     }
@@ -1820,7 +1834,7 @@ mod tests {
         ];
         egui::Mesh {
             indices: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-            vertices: vertices.to_vec(),
+            vertices: vertices.iter().map(|vertex| vertex.to_egui()).collect(),
             texture_id,
         }
     }
@@ -1895,10 +1909,11 @@ mod tests {
         let mut surface = SoftwareSurface::default();
         surface.resize(12, 12).expect("surface");
         surface.clear([0, 0, 0, 255]);
+        let vertices = vertices_from_egui(&mesh.vertices);
         for triangle in mesh.indices.as_chunks::<3>().0 {
-            let v0 = &mesh.vertices[usize::try_from(triangle[0]).expect("index")];
-            let v1 = &mesh.vertices[usize::try_from(triangle[1]).expect("index")];
-            let v2 = &mesh.vertices[usize::try_from(triangle[2]).expect("index")];
+            let v0 = &vertices[usize::try_from(triangle[0]).expect("index")];
+            let v1 = &vertices[usize::try_from(triangle[1]).expect("index")];
+            let v2 = &vertices[usize::try_from(triangle[2]).expect("index")];
             rasterize_triangle(&mut surface, v0, v1, v2, texture, clip, None);
         }
         surface.pixels
@@ -1923,11 +1938,8 @@ mod tests {
         }
     }
 
-    fn solid_texture_delta(
-        texture_id: egui::TextureId,
-        color: egui::Color32,
-    ) -> egui::TexturesDelta {
-        let image = egui::ColorImage::new([2, 2], vec![color, color, color, color]);
+    fn solid_texture_delta(texture_id: egui::TextureId, color: Color) -> egui::TexturesDelta {
+        let image = egui::ColorImage::new([2, 2], vec![color.to_egui(); 4]);
         egui::TexturesDelta {
             set: vec![(
                 texture_id,
@@ -1938,22 +1950,14 @@ mod tests {
     }
 
     fn clip_bounds(width: usize, height: usize) -> ClipBounds {
-        ClipBounds::new(
-            egui::Rect::from_min_max(
-                egui::Pos2::ZERO,
-                egui::pos2(usize_to_f32(width), usize_to_f32(height)),
-            ),
-            width,
-            height,
-        )
-        .expect("clip bounds")
+        ClipBounds::full(width, height)
     }
 
-    fn test_vertex(x: f32, y: f32) -> egui::epaint::Vertex {
-        egui::epaint::Vertex {
-            pos: egui::pos2(x, y),
-            uv: egui::Pos2::ZERO,
-            color: egui::Color32::WHITE,
+    fn test_vertex(x: f32, y: f32) -> Vertex {
+        Vertex {
+            pos: [x, y],
+            uv: [0.0, 0.0],
+            color: Color::WHITE,
         }
     }
 }

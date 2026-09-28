@@ -6,6 +6,7 @@ use super::math::{
     same_f32, usize_to_f32,
 };
 use super::types::TriangleRasterBounds;
+use crate::geometry::{Pos2, pos2};
 
 const TRIANGLE_SCANLINE_NARROWING_GUARD_PX: usize = 2;
 
@@ -308,9 +309,13 @@ pub(super) fn triangle_hint_x_range(
     let TriangleVertices { v0, v1, v2 } = vertices;
     let mut min_center_x = f32::NEG_INFINITY;
     let mut max_center_x = f32::INFINITY;
-    for (a, b) in [(v1.pos, v2.pos), (v2.pos, v0.pos), (v0.pos, v1.pos)] {
+    for (a, b) in [
+        (v1.pos2(), v2.pos2()),
+        (v2.pos2(), v0.pos2()),
+        (v0.pos2(), v1.pos2()),
+    ] {
         let slope_x = edge_step_x(a, b) * inv_area;
-        let at_origin = edge(a, b, egui::pos2(0.0, pixel_center_y)) * inv_area;
+        let at_origin = edge(a, b, pos2(0.0, pixel_center_y)) * inv_area;
         if !slope_x.is_finite() || !at_origin.is_finite() {
             return None;
         }
@@ -357,17 +362,17 @@ fn triangle_covers_pixel(
     coverage: TriangleCoverage,
 ) -> bool {
     let TriangleVertices { v0, v1, v2 } = vertices;
-    let pixel_center = egui::pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
-    let w0 = edge(v1.pos, v2.pos, pixel_center) * coverage.inv_area;
-    let w1 = edge(v2.pos, v0.pos, pixel_center) * coverage.inv_area;
-    let w2 = edge(v0.pos, v1.pos, pixel_center) * coverage.inv_area;
+    let pixel_center = pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
+    let w0 = edge(v1.pos2(), v2.pos2(), pixel_center) * coverage.inv_area;
+    let w1 = edge(v2.pos2(), v0.pos2(), pixel_center) * coverage.inv_area;
+    let w2 = edge(v0.pos2(), v1.pos2(), pixel_center) * coverage.inv_area;
     edge_covers_pixel(w0, coverage.includes_boundary.edge0)
         && edge_covers_pixel(w1, coverage.includes_boundary.edge1)
         && edge_covers_pixel(w2, coverage.includes_boundary.edge2)
 }
 
 pub(super) fn triangle_scanline_x_range(
-    positions: [egui::Pos2; 3],
+    positions: [Pos2; 3],
     bounds: TriangleRasterBounds,
     pixel_center_y: f32,
 ) -> (usize, usize) {

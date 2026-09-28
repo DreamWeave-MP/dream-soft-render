@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
+use crate::geometry::pos2;
 use std::time::Instant;
 
 use super::coverage::{
@@ -220,14 +222,7 @@ fn rasterize_constant_texel_textured_triangle_no_stats_with_color(
     vertices: TriangleVertices<'_>,
     bounds: TriangleRasterBounds,
     area: f32,
-    pixel_color: impl Fn(
-        &egui::epaint::Vertex,
-        &egui::epaint::Vertex,
-        &egui::epaint::Vertex,
-        f32,
-        f32,
-        f32,
-    ) -> [u8; 4],
+    pixel_color: impl Fn(&Vertex, &Vertex, &Vertex, f32, f32, f32) -> [u8; 4],
 ) {
     let TriangleVertices { v0, v1, v2 } = vertices;
     let raster = TriangleRasterState::new(v0, v1, v2, bounds, area);
@@ -901,14 +896,7 @@ fn rasterize_constant_texel_textured_triangle_with_stats_and_color(
     area: f32,
     white_texel: bool,
     stats: &mut RasterStats,
-    pixel_color: impl Fn(
-        &egui::epaint::Vertex,
-        &egui::epaint::Vertex,
-        &egui::epaint::Vertex,
-        f32,
-        f32,
-        f32,
-    ) -> [u8; 4],
+    pixel_color: impl Fn(&Vertex, &Vertex, &Vertex, f32, f32, f32) -> [u8; 4],
 ) {
     let TriangleVertices { v0, v1, v2 } = vertices;
     let raster = TriangleRasterState::new(v0, v1, v2, bounds, area);
@@ -933,11 +921,11 @@ fn rasterize_constant_texel_textured_triangle_with_stats_and_color(
             stats.textured_triangle_full_scan_rows += 1;
         }
         let (mut pixel_edge0, mut pixel_edge1, mut pixel_edge2) = if narrow_scanlines {
-            let pixel_center = egui::pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
+            let pixel_center = pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
             (
-                edge(v1.pos, v2.pos, pixel_center),
-                edge(v2.pos, v0.pos, pixel_center),
-                edge(v0.pos, v1.pos, pixel_center),
+                edge(v1.pos2(), v2.pos2(), pixel_center),
+                edge(v2.pos2(), v0.pos2(), pixel_center),
+                edge(v0.pos2(), v1.pos2(), pixel_center),
             )
         } else {
             (row_edge0, row_edge1, row_edge2)
@@ -1023,11 +1011,11 @@ fn rasterize_textured_triangle_no_stats(
             (bounds.min_x, bounds.max_x)
         };
         let (mut pixel_edge0, mut pixel_edge1, mut pixel_edge2) = if narrow_scanlines {
-            let pixel_center = egui::pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
+            let pixel_center = pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
             (
-                edge(v1.pos, v2.pos, pixel_center),
-                edge(v2.pos, v0.pos, pixel_center),
-                edge(v0.pos, v1.pos, pixel_center),
+                edge(v1.pos2(), v2.pos2(), pixel_center),
+                edge(v2.pos2(), v0.pos2(), pixel_center),
+                edge(v0.pos2(), v1.pos2(), pixel_center),
             )
         } else {
             (row_edge0, row_edge1, row_edge2)
@@ -1084,11 +1072,11 @@ fn rasterize_textured_triangle_with_stats(
             stats.textured_triangle_full_scan_rows += 1;
         }
         let (mut pixel_edge0, mut pixel_edge1, mut pixel_edge2) = if narrow_scanlines {
-            let pixel_center = egui::pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
+            let pixel_center = pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
             (
-                edge(v1.pos, v2.pos, pixel_center),
-                edge(v2.pos, v0.pos, pixel_center),
-                edge(v0.pos, v1.pos, pixel_center),
+                edge(v1.pos2(), v2.pos2(), pixel_center),
+                edge(v2.pos2(), v0.pos2(), pixel_center),
+                edge(v0.pos2(), v1.pos2(), pixel_center),
             )
         } else {
             (row_edge0, row_edge1, row_edge2)
@@ -1134,31 +1122,25 @@ struct TriangleRasterState {
 }
 
 impl TriangleRasterState {
-    fn new(
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
-        bounds: TriangleRasterBounds,
-        area: f32,
-    ) -> Self {
-        let start = egui::pos2(
+    fn new(v0: &Vertex, v1: &Vertex, v2: &Vertex, bounds: TriangleRasterBounds, area: f32) -> Self {
+        let start = pos2(
             usize_to_f32(bounds.min_x) + 0.5,
             usize_to_f32(bounds.min_y) + 0.5,
         );
         Self {
             inv_area: 1.0 / area,
-            w0_step_x: edge_step_x(v1.pos, v2.pos),
-            w1_step_x: edge_step_x(v2.pos, v0.pos),
-            w2_step_x: edge_step_x(v0.pos, v1.pos),
-            w0_step_y: edge_step_y(v1.pos, v2.pos),
-            w1_step_y: edge_step_y(v2.pos, v0.pos),
-            w2_step_y: edge_step_y(v0.pos, v1.pos),
-            row_edge0: edge(v1.pos, v2.pos, start),
-            row_edge1: edge(v2.pos, v0.pos, start),
-            row_edge2: edge(v0.pos, v1.pos, start),
-            edge0_includes_boundary: edge_includes_boundary(v1.pos, v2.pos, area),
-            edge1_includes_boundary: edge_includes_boundary(v2.pos, v0.pos, area),
-            edge2_includes_boundary: edge_includes_boundary(v0.pos, v1.pos, area),
+            w0_step_x: edge_step_x(v1.pos2(), v2.pos2()),
+            w1_step_x: edge_step_x(v2.pos2(), v0.pos2()),
+            w2_step_x: edge_step_x(v0.pos2(), v1.pos2()),
+            w0_step_y: edge_step_y(v1.pos2(), v2.pos2()),
+            w1_step_y: edge_step_y(v2.pos2(), v0.pos2()),
+            w2_step_y: edge_step_y(v0.pos2(), v1.pos2()),
+            row_edge0: edge(v1.pos2(), v2.pos2(), start),
+            row_edge1: edge(v2.pos2(), v0.pos2(), start),
+            row_edge2: edge(v0.pos2(), v1.pos2(), start),
+            edge0_includes_boundary: edge_includes_boundary(v1.pos2(), v2.pos2(), area),
+            edge1_includes_boundary: edge_includes_boundary(v2.pos2(), v0.pos2(), area),
+            edge2_includes_boundary: edge_includes_boundary(v0.pos2(), v1.pos2(), area),
         }
     }
 }
@@ -1224,11 +1206,11 @@ fn triangle_row_start_edges(
 ) -> (f32, f32, f32) {
     if narrow_scanlines {
         let TriangleVertices { v0, v1, v2 } = vertices;
-        let pixel_center = egui::pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
+        let pixel_center = pos2(usize_to_f32(start_x) + 0.5, usize_to_f32(y) + 0.5);
         (
-            edge(v1.pos, v2.pos, pixel_center),
-            edge(v2.pos, v0.pos, pixel_center),
-            edge(v0.pos, v1.pos, pixel_center),
+            edge(v1.pos2(), v2.pos2(), pixel_center),
+            edge(v2.pos2(), v0.pos2(), pixel_center),
+            edge(v0.pos2(), v1.pos2(), pixel_center),
         )
     } else {
         row_edges
@@ -1275,36 +1257,36 @@ pub(super) fn white_constant_texel_alpha_only_vertices(vertices: TriangleVertice
     let TriangleVertices { v0, v1, v2 } = vertices;
     [v0, v1, v2]
         .iter()
-        .all(|vertex| vertex.color.r() == 255 && vertex.color.g() == 255 && vertex.color.b() == 255)
+        .all(|vertex| vertex.color.r == 255 && vertex.color.g == 255 && vertex.color.b == 255)
 }
 
 fn white_constant_texel_uniform_rgb_vertices(vertices: TriangleVertices<'_>) -> bool {
     let TriangleVertices { v0, v1, v2 } = vertices;
-    v0.color.r() == v1.color.r()
-        && v0.color.r() == v2.color.r()
-        && v0.color.g() == v1.color.g()
-        && v0.color.g() == v2.color.g()
-        && v0.color.b() == v1.color.b()
-        && v0.color.b() == v2.color.b()
+    v0.color.r == v1.color.r
+        && v0.color.r == v2.color.r
+        && v0.color.g == v1.color.g
+        && v0.color.g == v2.color.g
+        && v0.color.b == v1.color.b
+        && v0.color.b == v2.color.b
 }
 
 fn white_constant_texel_row_alpha(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     raster: &TriangleRasterState,
     row_edges: (f32, f32, f32),
 ) -> f32 {
     let w0 = row_edges.0 * raster.inv_area;
     let w1 = row_edges.1 * raster.inv_area;
     let w2 = row_edges.2 * raster.inv_area;
-    interpolate_channel_value(v0.color.a(), v1.color.a(), v2.color.a(), w0, w1, w2)
+    interpolate_channel_value(v0.color.a, v1.color.a, v2.color.a, w0, w1, w2)
 }
 
 fn white_constant_texel_row_color(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     raster: &TriangleRasterState,
     row_edges: (f32, f32, f32),
 ) -> [f32; 4] {
@@ -1312,17 +1294,17 @@ fn white_constant_texel_row_color(
     let w1 = row_edges.1 * raster.inv_area;
     let w2 = row_edges.2 * raster.inv_area;
     [
-        interpolate_channel_value(v0.color.r(), v1.color.r(), v2.color.r(), w0, w1, w2),
-        interpolate_channel_value(v0.color.g(), v1.color.g(), v2.color.g(), w0, w1, w2),
-        interpolate_channel_value(v0.color.b(), v1.color.b(), v2.color.b(), w0, w1, w2),
-        interpolate_channel_value(v0.color.a(), v1.color.a(), v2.color.a(), w0, w1, w2),
+        interpolate_channel_value(v0.color.r, v1.color.r, v2.color.r, w0, w1, w2),
+        interpolate_channel_value(v0.color.g, v1.color.g, v2.color.g, w0, w1, w2),
+        interpolate_channel_value(v0.color.b, v1.color.b, v2.color.b, w0, w1, w2),
+        interpolate_channel_value(v0.color.a, v1.color.a, v2.color.a, w0, w1, w2),
     ]
 }
 
 fn white_constant_texel_color_step(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     raster: &TriangleRasterState,
 ) -> [f32; 4] {
     let w0_step = raster.w0_step_x * raster.inv_area;
@@ -1330,71 +1312,50 @@ fn white_constant_texel_color_step(
     let w2_step = raster.w2_step_x * raster.inv_area;
     [
         interpolate_channel_value(
-            v0.color.r(),
-            v1.color.r(),
-            v2.color.r(),
-            w0_step,
-            w1_step,
-            w2_step,
+            v0.color.r, v1.color.r, v2.color.r, w0_step, w1_step, w2_step,
         ),
         interpolate_channel_value(
-            v0.color.g(),
-            v1.color.g(),
-            v2.color.g(),
-            w0_step,
-            w1_step,
-            w2_step,
+            v0.color.g, v1.color.g, v2.color.g, w0_step, w1_step, w2_step,
         ),
         interpolate_channel_value(
-            v0.color.b(),
-            v1.color.b(),
-            v2.color.b(),
-            w0_step,
-            w1_step,
-            w2_step,
+            v0.color.b, v1.color.b, v2.color.b, w0_step, w1_step, w2_step,
         ),
         interpolate_channel_value(
-            v0.color.a(),
-            v1.color.a(),
-            v2.color.a(),
-            w0_step,
-            w1_step,
-            w2_step,
+            v0.color.a, v1.color.a, v2.color.a, w0_step, w1_step, w2_step,
         ),
     ]
 }
 
 fn white_constant_texel_alpha_step(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     raster: &TriangleRasterState,
 ) -> f32 {
     let w0_step = raster.w0_step_x * raster.inv_area;
     let w1_step = raster.w1_step_x * raster.inv_area;
     let w2_step = raster.w2_step_x * raster.inv_area;
     interpolate_channel_value(
-        v0.color.a(),
-        v1.color.a(),
-        v2.color.a(),
-        w0_step,
-        w1_step,
-        w2_step,
+        v0.color.a, v1.color.a, v2.color.a, w0_step, w1_step, w2_step,
     )
 }
 
 pub(super) fn textured_triangle_pixel_color(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     texture: &TextureImage,
     w0: f32,
     w1: f32,
     w2: f32,
 ) -> [u8; 4] {
-    let uv = egui::pos2(
-        v0.uv.x.mul_add(w0, v1.uv.x.mul_add(w1, v2.uv.x * w2)),
-        v0.uv.y.mul_add(w0, v1.uv.y.mul_add(w1, v2.uv.y * w2)),
+    let uv = pos2(
+        v0.uv2()
+            .x
+            .mul_add(w0, v1.uv2().x.mul_add(w1, v2.uv2().x * w2)),
+        v0.uv2()
+            .y
+            .mul_add(w0, v1.uv2().y.mul_add(w1, v2.uv2().y * w2)),
     );
     let vertex_color = interpolate_color(v0.color, v1.color, v2.color, w0, w1, w2);
     let texture_color = sample_nearest(texture, uv);
@@ -1402,9 +1363,9 @@ pub(super) fn textured_triangle_pixel_color(
 }
 
 fn interpolate_constant_texel_vertex_color(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     w0: f32,
     w1: f32,
     w2: f32,
@@ -1415,6 +1376,8 @@ fn interpolate_constant_texel_vertex_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Color;
+    use crate::geometry::Pos2;
     use crate::raster::math::{f32_to_usize_ceil_clamped, f32_to_usize_floor_clamped};
 
     #[test]
@@ -1661,15 +1624,15 @@ mod tests {
     #[test]
     fn generic_constant_texel_repeated_color_spans_record_opportunities_without_helper_use() {
         let vertices = [
-            test_vertex(egui::pos2(2.0, 2.0), [255, 255, 255, 255]),
-            test_vertex(egui::pos2(30.0, 3.0), [255, 255, 255, 255]),
-            test_vertex(egui::pos2(4.0, 16.0), [255, 255, 255, 255]),
+            test_vertex(pos2(2.0, 2.0), [255, 255, 255, 255]),
+            test_vertex(pos2(30.0, 3.0), [255, 255, 255, 255]),
+            test_vertex(pos2(4.0, 16.0), [255, 255, 255, 255]),
         ];
         let [v0, v1, v2] = &vertices;
         let mut surface = test_surface(40, 24);
         let mut stats = RasterStats::default();
         let bounds = test_triangle_bounds(&vertices);
-        let area = edge(v0.pos, v1.pos, v2.pos);
+        let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
 
         rasterize_constant_texel_textured_triangle_with_stats_and_color(
             &mut surface,
@@ -1709,9 +1672,9 @@ mod tests {
     #[test]
     fn generic_constant_texel_repeated_color_subruns_record_each_plateau() {
         let vertices = [
-            test_vertex(egui::pos2(0.0, 0.0), [255, 255, 255, 255]),
-            test_vertex(egui::pos2(32.0, 0.0), [255, 255, 255, 255]),
-            test_vertex(egui::pos2(0.0, 1000.0), [255, 255, 255, 255]),
+            test_vertex(pos2(0.0, 0.0), [255, 255, 255, 255]),
+            test_vertex(pos2(32.0, 0.0), [255, 255, 255, 255]),
+            test_vertex(pos2(0.0, 1000.0), [255, 255, 255, 255]),
         ];
         let [v0, v1, v2] = &vertices;
         let mut surface = test_surface(32, 1);
@@ -1722,7 +1685,7 @@ mod tests {
             max_x: 32,
             max_y: 1,
         };
-        let area = edge(v0.pos, v1.pos, v2.pos);
+        let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
 
         rasterize_constant_texel_textured_triangle_with_stats_and_color(
             &mut surface,
@@ -1827,9 +1790,9 @@ mod tests {
         let mut stats = RasterStats::default();
 
         let constant_alpha_vertices = [
-            test_vertex(egui::pos2(2.0, 2.0), [40, 20, 10, 128]),
-            test_vertex(egui::pos2(22.0, 3.0), [220, 80, 30, 128]),
-            test_vertex(egui::pos2(5.0, 15.0), [80, 200, 160, 128]),
+            test_vertex(pos2(2.0, 2.0), [40, 20, 10, 128]),
+            test_vertex(pos2(22.0, 3.0), [220, 80, 30, 128]),
+            test_vertex(pos2(5.0, 15.0), [80, 200, 160, 128]),
         ];
         rasterize_white_triangle_pair(
             &mut optimized,
@@ -1840,9 +1803,9 @@ mod tests {
         );
 
         let variable_alpha_vertices = [
-            test_vertex(egui::pos2(11.0, 7.0), [30, 210, 80, 16]),
-            test_vertex(egui::pos2(29.0, 8.0), [180, 40, 220, 248]),
-            test_vertex(egui::pos2(15.0, 22.0), [90, 160, 40, 96]),
+            test_vertex(pos2(11.0, 7.0), [30, 210, 80, 16]),
+            test_vertex(pos2(29.0, 8.0), [180, 40, 220, 248]),
+            test_vertex(pos2(15.0, 22.0), [90, 160, 40, 96]),
         ];
         rasterize_white_triangle_pair(
             &mut optimized,
@@ -1865,19 +1828,19 @@ mod tests {
     fn white_constant_texel_endpoint_spans_match_row_state_scan_on_boundary_rows() {
         let triangles = [
             [
-                test_vertex(egui::pos2(2.0, 2.0), [255, 64, 32, 255]),
-                test_vertex(egui::pos2(18.0, 2.0), [16, 255, 32, 255]),
-                test_vertex(egui::pos2(2.0, 13.0), [16, 64, 255, 255]),
+                test_vertex(pos2(2.0, 2.0), [255, 64, 32, 255]),
+                test_vertex(pos2(18.0, 2.0), [16, 255, 32, 255]),
+                test_vertex(pos2(2.0, 13.0), [16, 64, 255, 255]),
             ],
             [
-                test_vertex(egui::pos2(5.5, 1.0), [255, 255, 255, 32]),
-                test_vertex(egui::pos2(21.0, 10.5), [255, 255, 255, 224]),
-                test_vertex(egui::pos2(4.0, 18.0), [255, 255, 255, 128]),
+                test_vertex(pos2(5.5, 1.0), [255, 255, 255, 32]),
+                test_vertex(pos2(21.0, 10.5), [255, 255, 255, 224]),
+                test_vertex(pos2(4.0, 18.0), [255, 255, 255, 128]),
             ],
             [
-                test_vertex(egui::pos2(0.25, 7.75), [80, 120, 200, 192]),
-                test_vertex(egui::pos2(27.5, 8.0), [220, 10, 50, 192]),
-                test_vertex(egui::pos2(11.0, 21.25), [40, 220, 90, 192]),
+                test_vertex(pos2(0.25, 7.75), [80, 120, 200, 192]),
+                test_vertex(pos2(27.5, 8.0), [220, 10, 50, 192]),
+                test_vertex(pos2(11.0, 21.25), [40, 220, 90, 192]),
             ],
         ];
 
@@ -2153,13 +2116,13 @@ mod tests {
         optimized: &mut SoftwareSurface,
         reference: &mut SoftwareSurface,
         texture: &TextureImage,
-        vertices: &[egui::epaint::Vertex; 3],
+        vertices: &[Vertex; 3],
         stats: Option<&mut RasterStats>,
     ) {
         let [v0, v1, v2] = vertices;
         let triangle = TriangleVertices { v0, v1, v2 };
         let bounds = test_triangle_bounds(vertices);
-        let area = edge(v0.pos, v1.pos, v2.pos);
+        let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
         rasterize_constant_texel_textured_triangle(
             optimized,
             triangle,
@@ -2171,11 +2134,11 @@ mod tests {
         rasterize_textured_triangle(reference, triangle, texture, bounds, area, None);
     }
 
-    fn assert_endpoint_spans_match_row_state_scan(vertices: [egui::epaint::Vertex; 3]) {
+    fn assert_endpoint_spans_match_row_state_scan(vertices: [Vertex; 3]) {
         let [v0, v1, v2] = &vertices;
         let triangle = TriangleVertices { v0, v1, v2 };
         let bounds = test_triangle_bounds(&vertices);
-        let area = edge(v0.pos, v1.pos, v2.pos);
+        let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
         let raster = TriangleRasterState::new(v0, v1, v2, bounds, area);
         let positions = triangle_positions(triangle);
         let narrow_scanlines = bounds.pixel_area() > TRIANGLE_SCANLINE_NARROWING_MIN_AREA;
@@ -2243,25 +2206,25 @@ mod tests {
         (scan_span, expected_endpoint_probe_px)
     }
 
-    fn test_triangle_bounds(vertices: &[egui::epaint::Vertex; 3]) -> TriangleRasterBounds {
+    fn test_triangle_bounds(vertices: &[Vertex; 3]) -> TriangleRasterBounds {
         let min_x = vertices
             .iter()
-            .map(|vertex| f32_to_usize_floor_clamped(vertex.pos.x, usize::MAX))
+            .map(|vertex| f32_to_usize_floor_clamped(vertex.pos2().x, usize::MAX))
             .min()
             .expect("triangle has vertices");
         let min_y = vertices
             .iter()
-            .map(|vertex| f32_to_usize_floor_clamped(vertex.pos.y, usize::MAX))
+            .map(|vertex| f32_to_usize_floor_clamped(vertex.pos2().y, usize::MAX))
             .min()
             .expect("triangle has vertices");
         let max_x = vertices
             .iter()
-            .map(|vertex| f32_to_usize_ceil_clamped(vertex.pos.x, usize::MAX))
+            .map(|vertex| f32_to_usize_ceil_clamped(vertex.pos2().x, usize::MAX))
             .max()
             .expect("triangle has vertices");
         let max_y = vertices
             .iter()
-            .map(|vertex| f32_to_usize_ceil_clamped(vertex.pos.y, usize::MAX))
+            .map(|vertex| f32_to_usize_ceil_clamped(vertex.pos2().y, usize::MAX))
             .max()
             .expect("triangle has vertices");
         TriangleRasterBounds {
@@ -2272,11 +2235,11 @@ mod tests {
         }
     }
 
-    fn test_vertex(pos: egui::Pos2, color: [u8; 4]) -> egui::epaint::Vertex {
-        egui::epaint::Vertex {
-            pos,
-            uv: egui::pos2(0.0, 0.0),
-            color: egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]),
+    fn test_vertex(pos: Pos2, color: [u8; 4]) -> Vertex {
+        Vertex {
+            pos: [pos.x, pos.y],
+            uv: [0.0, 0.0],
+            color: Color::from_rgba_premultiplied(color[0], color[1], color[2], color[3]),
         }
     }
 

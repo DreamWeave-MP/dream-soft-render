@@ -69,11 +69,28 @@ impl TriangleRasterBounds {
 }
 
 impl ClipBounds {
-    pub(crate) fn new(rect: egui::Rect, width: usize, height: usize) -> io::Result<Self> {
-        let min_x = clamp_rect_value(rect.min.x.floor(), width)?;
-        let min_y = clamp_rect_value(rect.min.y.floor(), height)?;
-        let max_x = clamp_rect_value(rect.max.x.ceil(), width)?;
-        let max_y = clamp_rect_value(rect.max.y.ceil(), height)?;
+    /// The whole `width`x`height` surface.
+    pub(crate) const fn full(width: usize, height: usize) -> Self {
+        Self {
+            min_x: 0,
+            min_y: 0,
+            max_x: width,
+            max_y: height,
+        }
+    }
+
+    /// Pixel bounds covering a float rectangle given as `[min_x, min_y, max_x, max_y]`, grown
+    /// outward to whole pixels and clamped to the surface. Non-finite edges are an error.
+    pub(crate) fn from_float_edges(
+        edges: [f32; 4],
+        width: usize,
+        height: usize,
+    ) -> io::Result<Self> {
+        let [min_x, min_y, max_x, max_y] = edges;
+        let min_x = clamp_rect_value(min_x.floor(), width)?;
+        let min_y = clamp_rect_value(min_y.floor(), height)?;
+        let max_x = clamp_rect_value(max_x.ceil(), width)?;
+        let max_y = clamp_rect_value(max_y.ceil(), height)?;
         Ok(Self {
             min_x,
             min_y,

@@ -23,6 +23,25 @@ pub struct TextureId(pub(crate) u64);
 // One counter for every renderer in the process, so handles cannot alias across renderers.
 static NEXT_TEXTURE_ID: AtomicU64 = AtomicU64::new(0);
 
+/// How the store names a texture: one egui uploaded, or one made through
+/// [`SoftwareRenderer::create_texture`](crate::SoftwareRenderer::create_texture).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum TextureKey {
+    Egui(egui::TextureId),
+    Native(TextureId),
+}
+
+impl TextureKey {
+    /// The texture an egui mesh samples. egui only uploads `Managed` textures, so `User(n)` is
+    /// free to mean renderer-created texture `n`; that is how egui UIs show them.
+    pub(crate) const fn for_egui_mesh(id: egui::TextureId) -> Self {
+        match id {
+            egui::TextureId::User(native) => Self::Native(TextureId(native)),
+            egui::TextureId::Managed(_) => Self::Egui(id),
+        }
+    }
+}
+
 impl TextureId {
     /// Issues the next process-wide handle, or `None` once all `u64` values are spent. It never
     /// wraps, because a wrapped counter would hand out a handle that is already in use.
@@ -30,8 +49,8 @@ impl TextureId {
         issue_from(&NEXT_TEXTURE_ID).map(Self)
     }
 
-    /// egui meshes name renderer-created textures as `TextureId::User(n)`; egui itself only
-    /// uploads `Managed` textures, so the two never collide.
+    /// The egui id that makes an egui mesh sample this texture; see
+    /// [`TextureKey::for_egui_mesh`].
     pub(crate) const fn to_egui(self) -> egui::TextureId {
         egui::TextureId::User(self.0)
     }
@@ -60,7 +79,7 @@ pub(crate) static EMPTY_TEXTURE: TextureImage = TextureImage {
 
 #[derive(Debug, Default)]
 pub(crate) struct TextureStore {
-    textures: HashMap<egui::TextureId, TextureImage>,
+    textures: HashMap<TextureKey, TextureImage>,
     bytes_used: usize,
 }
 
@@ -78,6 +97,7 @@ impl TextureStore {
         id: egui::TextureId,
         delta: &egui::epaint::ImageDelta,
     ) -> io::Result<TextureSetStats> {
+        let id = TextureKey::Egui(id);
         let metadata = TextureImageMetadata::from_image_data(&delta.image)?;
         if let Some(pos) = delta.pos {
             self.textures
@@ -130,7 +150,7 @@ impl TextureStore {
             });
         }
         self.textures.insert(
-            id.to_egui(),
+            TextureKey::Native(id),
             TextureImage {
                 width,
                 height,
@@ -153,7 +173,7 @@ impl TextureStore {
         check_pixel_data_length(expected, pixels)?;
         let texture = self
             .textures
-            .get_mut(&id.to_egui())
+            .get_mut(&TextureKey::Native(id))
             .ok_or(Error::UnknownTexture(id))?;
         texture
             .validate_update_bounds(pos, width, height)
@@ -171,15 +191,20 @@ impl TextureStore {
     }
 
     pub(crate) fn free_native(&mut self, id: TextureId) -> Result<(), Error> {
-        if self.textures.contains_key(&id.to_egui()) {
-            self.free(id.to_egui());
+        if self.textures.contains_key(&TextureKey::Native(id)) {
+            self.free(TextureKey::Native(id));
             Ok(())
         } else {
             Err(Error::UnknownTexture(id))
         }
     }
 
-    pub(crate) fn free(&mut self, id: egui::TextureId) {
+    /// Frees a texture egui released at the end of a frame.
+    pub(crate) fn free_egui(&mut self, id: egui::TextureId) {
+        self.free(TextureKey::Egui(id));
+    }
+
+    fn free(&mut self, id: TextureKey) {
         if let Some(texture) = self.textures.remove(&id) {
             self.bytes_used = self
                 .bytes_used
@@ -188,7 +213,7 @@ impl TextureStore {
         }
     }
 
-    pub(crate) fn get(&self, id: &egui::TextureId) -> Option<&TextureImage> {
+    pub(crate) fn get(&self, id: &TextureKey) -> Option<&TextureImage> {
         self.textures.get(id)
     }
 
@@ -469,7 +494,7 @@ mod tests {
         assert_eq!(store.len(), 1);
         assert_eq!(store.bytes_used(), 12);
 
-        store.free(id);
+        store.free_egui(id);
 
         assert_eq!(store.len(), 0);
         assert_eq!(store.bytes_used(), 0);

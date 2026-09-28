@@ -40,6 +40,15 @@ impl Vertex {
         }
     }
 
+    pub(crate) const fn pos2(&self) -> Pos2 {
+        pos2(self.pos[0], self.pos[1])
+    }
+
+    pub(crate) const fn uv2(&self) -> Pos2 {
+        pos2(self.uv[0], self.uv[1])
+    }
+
+    #[cfg(test)]
     pub(crate) const fn to_egui(self) -> egui::epaint::Vertex {
         egui::epaint::Vertex {
             pos: egui::pos2(self.pos[0], self.pos[1]),
@@ -47,6 +56,43 @@ impl Vertex {
             color: self.color.to_egui(),
         }
     }
+}
+
+/// A point inside the rasterizer: surface pixels for positions, normalized for texture
+/// coordinates. Public vertices use `[f32; 2]`; this is the named-field view the raster code
+/// computes with.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Pos2 {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+}
+
+impl Pos2 {
+    pub(crate) const ZERO: Self = pos2(0.0, 0.0);
+}
+
+pub(crate) const fn pos2(x: f32, y: f32) -> Pos2 {
+    Pos2 { x, y }
+}
+
+/// A per-pixel step through texture space.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Vec2 {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+}
+
+pub(crate) const fn vec2(x: f32, y: f32) -> Vec2 {
+    Vec2 { x, y }
+}
+
+/// The triangles the raster core draws: borrowed vertices and indices, three per triangle.
+/// [`Frame::mesh`](crate::Frame::mesh) hands over the caller's slices as they are, and the
+/// egui adapter reinterprets egui's vertex buffer in place, so neither path copies geometry.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RasterMesh<'a> {
+    pub(crate) vertices: &'a [Vertex],
+    pub(crate) indices: &'a [u32],
 }
 
 /// An axis-aligned rectangle in floating-point surface pixels (for positions) or normalized

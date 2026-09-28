@@ -6,6 +6,8 @@ use super::math::{
 };
 use super::types::{ClipBounds, TriangleRasterBounds};
 use super::{RasterStats, usize_to_f32};
+use crate::Vertex;
+use crate::geometry::{Pos2, pos2};
 use crate::surface::SoftwareSurface;
 
 const SOLID_FAN_PRECOMPUTED_EDGE_BUDGET: usize = 256;
@@ -16,7 +18,7 @@ const SOLID_FAN_SPAN_CACHE_MAX_ROWS: usize = 512;
 #[cfg(test)]
 pub(crate) fn rasterize_solid_fan(
     surface: &mut SoftwareSurface,
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     triangle_count: usize,
     color: [u8; 4],
@@ -270,7 +272,7 @@ fn rasterize_solid_fan_span(
 
 #[derive(Clone, Copy)]
 pub(crate) struct SolidFanRasterParams<'a> {
-    pub(crate) vertices: &'a [egui::epaint::Vertex],
+    pub(crate) vertices: &'a [Vertex],
     pub(crate) polygon: &'a [usize],
     pub(crate) triangle_count: usize,
     pub(crate) color: [u8; 4],
@@ -337,7 +339,7 @@ struct SolidFanSpanCacheKey {
 
 impl SolidFanSpanCacheKey {
     fn new(
-        vertices: &[egui::epaint::Vertex],
+        vertices: &[Vertex],
         polygon: &[usize],
         triangle_count: usize,
         clip: ClipBounds,
@@ -345,7 +347,7 @@ impl SolidFanSpanCacheKey {
     ) -> Option<Self> {
         let mut positions = Vec::with_capacity(polygon.len());
         for vertex_index in polygon {
-            let pos = vertices.get(*vertex_index)?.pos;
+            let pos = vertices.get(*vertex_index)?.pos2();
             if !pos.x.is_finite() || !pos.y.is_finite() {
                 return None;
             }
@@ -409,8 +411,8 @@ pub(super) struct PolygonScanlineSpan {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct PrecomputedFanEdge {
-    a: egui::Pos2,
-    b: egui::Pos2,
+    a: Pos2,
+    b: Pos2,
     slope_x: f32,
     includes_boundary: bool,
 }
@@ -427,7 +429,7 @@ impl PrecomputedFanEdges {
 }
 
 fn precompute_polygon_edges(
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     area_sign: f32,
 ) -> Result<PrecomputedFanEdges, PrecomputeFanEdgesError> {
@@ -437,8 +439,8 @@ fn precompute_polygon_edges(
 
     let mut edges = [PrecomputedFanEdge::default(); SOLID_FAN_PRECOMPUTED_EDGE_BUDGET];
     for edge_index in 0..polygon.len() {
-        let a = vertices[polygon[edge_index]].pos;
-        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos;
+        let a = vertices[polygon[edge_index]].pos2();
+        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos2();
         let slope_x = edge_step_x(a, b) * area_sign;
         if !slope_x.is_finite() {
             return Err(PrecomputeFanEdgesError::NonFinite);
@@ -463,7 +465,7 @@ enum PrecomputeFanEdgesError {
 }
 
 pub(crate) fn polygon_raster_bounds(
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     clip: ClipBounds,
 ) -> Option<TriangleRasterBounds> {
@@ -476,10 +478,10 @@ pub(crate) fn polygon_raster_bounds(
     let mut max_y = f32::NEG_INFINITY;
     for vertex_index in polygon {
         let vertex = &vertices[*vertex_index];
-        min_x = min_x.min(vertex.pos.x);
-        min_y = min_y.min(vertex.pos.y);
-        max_x = max_x.max(vertex.pos.x);
-        max_y = max_y.max(vertex.pos.y);
+        min_x = min_x.min(vertex.pos2().x);
+        min_y = min_y.min(vertex.pos2().y);
+        max_x = max_x.max(vertex.pos2().x);
+        max_y = max_y.max(vertex.pos2().y);
     }
 
     let min_x = f32_to_usize_floor_clamped(min_x, clip.max_x).max(clip.min_x);
@@ -498,11 +500,11 @@ pub(crate) fn polygon_raster_bounds(
     })
 }
 
-fn polygon_area_sign(vertices: &[egui::epaint::Vertex], polygon: &[usize]) -> Option<f32> {
+fn polygon_area_sign(vertices: &[Vertex], polygon: &[usize]) -> Option<f32> {
     let mut twice_area = 0.0;
     for edge_index in 0..polygon.len() {
-        let a = vertices[polygon[edge_index]].pos;
-        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos;
+        let a = vertices[polygon[edge_index]].pos2();
+        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos2();
         twice_area += a.x.mul_add(b.y, -(a.y * b.x));
     }
     if twice_area.abs() <= f32::EPSILON {
@@ -512,7 +514,7 @@ fn polygon_area_sign(vertices: &[egui::epaint::Vertex], polygon: &[usize]) -> Op
 }
 
 pub(super) fn polygon_scanline_span(
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     bounds: TriangleRasterBounds,
     y: usize,
@@ -524,10 +526,10 @@ pub(super) fn polygon_scanline_span(
     let mut upper = None;
     let mut edge_intersections = 0;
     for edge_index in 0..polygon.len() {
-        let a = vertices[polygon[edge_index]].pos;
-        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos;
+        let a = vertices[polygon[edge_index]].pos2();
+        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos2();
         let slope_x = edge_step_x(a, b) * area_sign;
-        let at_origin = edge(a, b, egui::pos2(0.0, pixel_center_y)) * area_sign;
+        let at_origin = edge(a, b, pos2(0.0, pixel_center_y)) * area_sign;
         if !slope_x.is_finite() || !at_origin.is_finite() {
             return PolygonScanlineSpan {
                 fell_back: true,
@@ -584,7 +586,7 @@ pub(super) fn polygon_scanline_span(
 
 fn polygon_scanline_span_precomputed(
     edges: &PrecomputedFanEdges,
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     bounds: TriangleRasterBounds,
     y: usize,
@@ -596,7 +598,7 @@ fn polygon_scanline_span_precomputed(
     let mut upper = None;
     let mut edge_intersections = 0;
     for edge_data in edges.as_slice() {
-        let at_origin = edge(edge_data.a, edge_data.b, egui::pos2(0.0, pixel_center_y)) * area_sign;
+        let at_origin = edge(edge_data.a, edge_data.b, pos2(0.0, pixel_center_y)) * area_sign;
         if !at_origin.is_finite() {
             return PolygonScanlineSpan {
                 fell_back: true,
@@ -659,7 +661,7 @@ fn polygon_scanline_span_precomputed(
 }
 
 pub(super) fn polygon_fallback_scanline_span(
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     bounds: TriangleRasterBounds,
     y: usize,
@@ -737,7 +739,7 @@ fn polygon_upper_bound_x(upper: Option<(f32, bool)>, bounds: TriangleRasterBound
 fn polygon_correct_span_endpoints(
     span: &mut (usize, usize),
     y: usize,
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     area_sign: f32,
     bounds: TriangleRasterBounds,
@@ -833,7 +835,7 @@ fn polygon_correct_span_endpoints(
 fn polygon_endpoint_probe(
     x: usize,
     y: usize,
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     area_sign: f32,
     collect_stats: bool,
@@ -848,14 +850,14 @@ fn polygon_endpoint_probe(
 fn polygon_covers_pixel(
     x: usize,
     y: usize,
-    vertices: &[egui::epaint::Vertex],
+    vertices: &[Vertex],
     polygon: &[usize],
     area_sign: f32,
 ) -> bool {
-    let pixel_center = egui::pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
+    let pixel_center = pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
     for edge_index in 0..polygon.len() {
-        let a = vertices[polygon[edge_index]].pos;
-        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos;
+        let a = vertices[polygon[edge_index]].pos2();
+        let b = vertices[polygon[(edge_index + 1) % polygon.len()]].pos2();
         let weight = edge(a, b, pixel_center) * area_sign;
         if !edge_covers_pixel(weight, edge_includes_boundary(a, b, area_sign)) {
             return false;
@@ -867,6 +869,7 @@ fn polygon_covers_pixel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Color;
 
     #[test]
     fn precomputed_scanline_solver_matches_reference_solver() {
@@ -1055,11 +1058,11 @@ mod tests {
         }
     }
 
-    fn test_vertex(x: f32, y: f32) -> egui::epaint::Vertex {
-        egui::epaint::Vertex {
-            pos: egui::pos2(x, y),
-            uv: egui::Pos2::ZERO,
-            color: egui::Color32::WHITE,
+    fn test_vertex(x: f32, y: f32) -> Vertex {
+        Vertex {
+            pos: [x, y],
+            uv: [0.0, 0.0],
+            color: Color::WHITE,
         }
     }
 }

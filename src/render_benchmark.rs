@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use super::texture::TextureImage;
+use crate::geometry::{RasterMesh, pos2};
 use crate::raster::usize_to_f32;
+use crate::{Color, Vertex};
 
 const TEXTURE_WIDTH: usize = 64;
 const TEXTURE_HEIGHT: usize = 4;
@@ -20,7 +22,7 @@ const RECT_GAP: usize = 1;
 pub struct SampledRectModulatedWorkload {
     viewport_width: usize,
     viewport_height: usize,
-    mesh: egui::Mesh,
+    mesh: BenchmarkMesh,
     texture: TextureImage,
     stats: SampledRectModulatedWorkloadStats,
 }
@@ -61,8 +63,11 @@ impl SampledRectModulatedWorkload {
         self.viewport_width == width && self.viewport_height == height
     }
 
-    pub(crate) fn mesh(&self) -> &egui::Mesh {
-        &self.mesh
+    pub(crate) fn mesh(&self) -> RasterMesh<'_> {
+        RasterMesh {
+            vertices: &self.mesh.vertices,
+            indices: &self.mesh.indices,
+        }
     }
 
     pub(crate) fn texture(&self) -> &TextureImage {
@@ -101,12 +106,11 @@ fn benchmark_mesh(
     viewport_width: usize,
     viewport_height: usize,
     texture: &TextureImage,
-) -> (egui::Mesh, SampledRectModulatedWorkloadStats) {
+) -> (BenchmarkMesh, SampledRectModulatedWorkloadStats) {
     let rects = LT4_RECTS + MID_RECTS + WIDE_RECTS;
-    let mut mesh = egui::Mesh {
+    let mut mesh = BenchmarkMesh {
         indices: Vec::with_capacity(rects * 6),
         vertices: Vec::with_capacity(rects * 4),
-        texture_id: egui::TextureId::Managed(0),
     };
     let mut cursor = MeshCursor::new(viewport_width, viewport_height);
     let mut stats = SampledRectModulatedWorkloadStats {
@@ -173,7 +177,7 @@ impl MeshCursor {
 }
 
 fn push_rect(
-    mesh: &mut egui::Mesh,
+    mesh: &mut BenchmarkMesh,
     cursor: &mut MeshCursor,
     rect_width: usize,
     index: usize,
@@ -188,8 +192,8 @@ fn push_rect(
     let uv_right = uv_right / max_texel;
     let texel_y = (index / texture_width) % TEXTURE_HEIGHT;
     let uv_y = usize_to_f32(texel_y) / usize_to_f32(TEXTURE_HEIGHT - 1);
-    let min = egui::pos2(usize_to_f32(x), usize_to_f32(y));
-    let max = egui::pos2(usize_to_f32(x + rect_width), usize_to_f32(y + 1));
+    let min = pos2(usize_to_f32(x), usize_to_f32(y));
+    let max = pos2(usize_to_f32(x + rect_width), usize_to_f32(y + 1));
     mesh.vertices.extend_from_slice(&[
         vertex(min.x, min.y, uv_left, uv_y),
         vertex(max.x, min.y, uv_right, uv_y),
@@ -200,11 +204,39 @@ fn push_rect(
         .extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
 }
 
-fn vertex(x: f32, y: f32, uv_x: f32, uv_y: f32) -> egui::epaint::Vertex {
-    egui::epaint::Vertex {
-        pos: egui::pos2(x, y),
-        uv: egui::pos2(uv_x, uv_y),
-        color: egui::Color32::from_rgba_premultiplied(
+/// The workload's geometry. Vertices compare bit for bit, so the workload can be `Eq`.
+#[derive(Debug)]
+struct BenchmarkMesh {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+}
+
+impl PartialEq for BenchmarkMesh {
+    fn eq(&self, other: &Self) -> bool {
+        let bits = |vertex: &Vertex| {
+            (
+                vertex.pos.map(f32::to_bits),
+                vertex.uv.map(f32::to_bits),
+                vertex.color,
+            )
+        };
+        self.indices == other.indices
+            && self.vertices.len() == other.vertices.len()
+            && self
+                .vertices
+                .iter()
+                .zip(&other.vertices)
+                .all(|(left, right)| bits(left) == bits(right))
+    }
+}
+
+impl Eq for BenchmarkMesh {}
+
+fn vertex(x: f32, y: f32, uv_x: f32, uv_y: f32) -> Vertex {
+    Vertex {
+        pos: [x, y],
+        uv: [uv_x, uv_y],
+        color: Color::from_rgba_premultiplied(
             VERTEX_COLOR[0],
             VERTEX_COLOR[1],
             VERTEX_COLOR[2],

@@ -6,31 +6,37 @@ use super::solid::solid_triangle_color;
 use super::types::{
     ClipBounds, TriangleClassification, TriangleRasterBounds, TriangleScanWorkEstimate,
 };
+use crate::Vertex;
+use crate::geometry::Pos2;
 use crate::texture::TextureImage;
 
 pub(super) const TRIANGLE_SCANLINE_NARROWING_MIN_AREA: usize = 1024;
 
 #[derive(Clone, Copy)]
 pub(super) struct TriangleVertices<'a> {
-    pub(super) v0: &'a egui::epaint::Vertex,
-    pub(super) v1: &'a egui::epaint::Vertex,
-    pub(super) v2: &'a egui::epaint::Vertex,
+    pub(super) v0: &'a Vertex,
+    pub(super) v1: &'a Vertex,
+    pub(super) v2: &'a Vertex,
 }
 
 pub(crate) fn triangle_raster_bounds(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     clip: ClipBounds,
 ) -> Option<TriangleRasterBounds> {
-    let min_x = f32_to_usize_floor_clamped(v0.pos.x.min(v1.pos.x).min(v2.pos.x), clip.max_x)
-        .max(clip.min_x);
+    let min_x =
+        f32_to_usize_floor_clamped(v0.pos2().x.min(v1.pos2().x).min(v2.pos2().x), clip.max_x)
+            .max(clip.min_x);
     let max_x =
-        f32_to_usize_ceil_clamped(v0.pos.x.max(v1.pos.x).max(v2.pos.x), clip.max_x).min(clip.max_x);
-    let min_y = f32_to_usize_floor_clamped(v0.pos.y.min(v1.pos.y).min(v2.pos.y), clip.max_y)
-        .max(clip.min_y);
+        f32_to_usize_ceil_clamped(v0.pos2().x.max(v1.pos2().x).max(v2.pos2().x), clip.max_x)
+            .min(clip.max_x);
+    let min_y =
+        f32_to_usize_floor_clamped(v0.pos2().y.min(v1.pos2().y).min(v2.pos2().y), clip.max_y)
+            .max(clip.min_y);
     let max_y =
-        f32_to_usize_ceil_clamped(v0.pos.y.max(v1.pos.y).max(v2.pos.y), clip.max_y).min(clip.max_y);
+        f32_to_usize_ceil_clamped(v0.pos2().y.max(v1.pos2().y).max(v2.pos2().y), clip.max_y)
+            .min(clip.max_y);
     if min_x >= max_x || min_y >= max_y {
         return None;
     }
@@ -44,7 +50,7 @@ pub(crate) fn triangle_raster_bounds(
 }
 
 pub(crate) fn estimate_triangle_scan_work(
-    positions: [egui::Pos2; 3],
+    positions: [Pos2; 3],
     bounds: TriangleRasterBounds,
 ) -> TriangleScanWorkEstimate {
     let mut estimate = TriangleScanWorkEstimate::default();
@@ -66,17 +72,17 @@ pub(crate) fn estimate_triangle_scan_work(
     estimate
 }
 
-pub(super) fn triangle_positions(vertices: TriangleVertices<'_>) -> [egui::Pos2; 3] {
-    [vertices.v0.pos, vertices.v1.pos, vertices.v2.pos]
+pub(super) fn triangle_positions(vertices: TriangleVertices<'_>) -> [Pos2; 3] {
+    [vertices.v0.pos2(), vertices.v1.pos2(), vertices.v2.pos2()]
 }
 
 pub(crate) fn classify_triangle(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     texture: &TextureImage,
 ) -> TriangleClassification {
-    if edge(v0.pos, v1.pos, v2.pos).abs() <= f32::EPSILON {
+    if edge(v0.pos2(), v1.pos2(), v2.pos2()).abs() <= f32::EPSILON {
         return TriangleClassification::Degenerate;
     }
     if solid_triangle_color(v0, v1, v2, texture).is_some() {

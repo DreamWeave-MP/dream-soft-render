@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
 use std::time::Instant;
 
 use super::coverage::{
@@ -39,9 +40,9 @@ pub(super) fn rasterize_solid_triangle(
     let coverage = TriangleCoverage {
         inv_area,
         includes_boundary: TriangleBoundaryIncludes {
-            edge0: edge_includes_boundary(v1.pos, v2.pos, area),
-            edge1: edge_includes_boundary(v2.pos, v0.pos, area),
-            edge2: edge_includes_boundary(v0.pos, v1.pos, area),
+            edge0: edge_includes_boundary(v1.pos2(), v2.pos2(), area),
+            edge1: edge_includes_boundary(v2.pos2(), v0.pos2(), area),
+            edge2: edge_includes_boundary(v0.pos2(), v1.pos2(), area),
         },
     };
     let positions = triangle_positions(vertices);
@@ -167,9 +168,9 @@ fn triangle_hint_range_for_row(
 }
 
 pub(crate) fn solid_triangle_color_decision(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     texture: &TextureImage,
 ) -> SolidTriangleColorDecision {
     if v0.color != v1.color || v0.color != v2.color {
@@ -183,8 +184,8 @@ pub(crate) fn solid_triangle_color_decision(
         ));
     }
 
-    let t0 = nearest_texel(texture, v0.uv);
-    if t0 != nearest_texel(texture, v1.uv) || t0 != nearest_texel(texture, v2.uv) {
+    let t0 = nearest_texel(texture, v0.uv2());
+    if t0 != nearest_texel(texture, v1.uv2()) || t0 != nearest_texel(texture, v2.uv2()) {
         return SolidTriangleColorDecision::NonUniformTexel;
     }
 
@@ -195,9 +196,9 @@ pub(crate) fn solid_triangle_color_decision(
 }
 
 pub(super) fn solid_triangle_color(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     texture: &TextureImage,
 ) -> Option<[u8; 4]> {
     match solid_triangle_color_decision(v0, v1, v2, texture) {

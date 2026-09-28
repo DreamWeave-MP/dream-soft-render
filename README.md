@@ -62,7 +62,9 @@ fn draw_status_panel(renderer: &mut SoftwareRenderer) -> Result<Vec<u8>, dream_s
 ```
 
 Draw calls rasterize immediately, in call order. There is no command list to flush, and no
-deferred state that can disagree with what you asked for.
+deferred state that can disagree with what you asked for. `Frame::mesh` rasterizes straight out
+of the slices you pass; the vertices are not copied into some internal format first, because
+`Vertex` is the internal format.
 
 `begin_frame` does not clear. The surface keeps the previous frame's pixels until you call
 `clear`, except that a new or resized surface starts transparent black. If you want a
@@ -87,7 +89,9 @@ fn render_ui(renderer: &mut SoftwareRenderer, context: &egui::Context) -> std::i
 ```
 
 `render_egui` runs the closure, applies egui's texture uploads, tessellates at one pixel per
-point, and rasterizes into the same surface `Frame` draws into. Textures from `create_texture`
+point, and rasterizes into the same surface `Frame` draws into. egui's vertex buffers are read
+in place: egui's vertex has the same 20-byte layout as `Vertex`, compile-time assertions hold
+the two to it, and the build fails if a future egui changes it. Textures from `create_texture`
 show up in egui through `egui_adapter::egui_texture_id`.
 
 egui repaints a lot: animations, cursor blinks, the extra layout passes it takes when widgets

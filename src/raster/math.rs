@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Color;
+use crate::geometry::Pos2;
 use std::cmp::Ordering;
 
 pub(crate) fn usize_to_f32(value: usize) -> f32 {
@@ -67,23 +69,23 @@ fn f32_to_u8_bounded(value: f32) -> u8 {
     value as u8
 }
 
-pub(super) fn edge(a: egui::Pos2, b: egui::Pos2, c: egui::Pos2) -> f32 {
+pub(super) fn edge(a: Pos2, b: Pos2, c: Pos2) -> f32 {
     (c.x - a.x).mul_add(b.y - a.y, -((c.y - a.y) * (b.x - a.x)))
 }
 
-pub(super) fn edge_step_x(a: egui::Pos2, b: egui::Pos2) -> f32 {
+pub(super) fn edge_step_x(a: Pos2, b: Pos2) -> f32 {
     b.y - a.y
 }
 
-pub(super) fn edge_step_y(a: egui::Pos2, b: egui::Pos2) -> f32 {
+pub(super) fn edge_step_y(a: Pos2, b: Pos2) -> f32 {
     -(b.x - a.x)
 }
 
-fn edge_is_top_left(a: egui::Pos2, b: egui::Pos2) -> bool {
+fn edge_is_top_left(a: Pos2, b: Pos2) -> bool {
     a.y < b.y || (same_f32(a.y, b.y) && a.x > b.x)
 }
 
-pub(super) fn edge_includes_boundary(a: egui::Pos2, b: egui::Pos2, area: f32) -> bool {
+pub(super) fn edge_includes_boundary(a: Pos2, b: Pos2, area: f32) -> bool {
     if area < 0.0 {
         edge_is_top_left(a, b)
     } else {
@@ -99,11 +101,11 @@ pub(super) fn same_f32(left: f32, right: f32) -> bool {
     matches!(left.partial_cmp(&right), Some(Ordering::Equal))
 }
 
-pub(super) fn same_pos2(left: egui::Pos2, right: egui::Pos2) -> bool {
+pub(super) fn same_pos2(left: Pos2, right: Pos2) -> bool {
     same_f32(left.x, right.x) && same_f32(left.y, right.y)
 }
 
-pub(super) fn near_finite_pos2(left: egui::Pos2, right: egui::Pos2, epsilon: f32) -> bool {
+pub(super) fn near_finite_pos2(left: Pos2, right: Pos2, epsilon: f32) -> bool {
     left.x.is_finite()
         && left.y.is_finite()
         && right.x.is_finite()
@@ -112,23 +114,23 @@ pub(super) fn near_finite_pos2(left: egui::Pos2, right: egui::Pos2, epsilon: f32
         && (left.y - right.y).abs() <= epsilon
 }
 
-pub(super) fn color_to_array(color: egui::Color32) -> [u8; 4] {
-    [color.r(), color.g(), color.b(), color.a()]
+pub(super) fn color_to_array(color: Color) -> [u8; 4] {
+    [color.r, color.g, color.b, color.a]
 }
 
 pub(super) fn interpolate_color(
-    c0: egui::Color32,
-    c1: egui::Color32,
-    c2: egui::Color32,
+    c0: Color,
+    c1: Color,
+    c2: Color,
     w0: f32,
     w1: f32,
     w2: f32,
 ) -> [u8; 4] {
     [
-        interpolate_channel(c0.r(), c1.r(), c2.r(), w0, w1, w2),
-        interpolate_channel(c0.g(), c1.g(), c2.g(), w0, w1, w2),
-        interpolate_channel(c0.b(), c1.b(), c2.b(), w0, w1, w2),
-        interpolate_channel(c0.a(), c1.a(), c2.a(), w0, w1, w2),
+        interpolate_channel(c0.r, c1.r, c2.r, w0, w1, w2),
+        interpolate_channel(c0.g, c1.g, c2.g, w0, w1, w2),
+        interpolate_channel(c0.b, c1.b, c2.b, w0, w1, w2),
+        interpolate_channel(c0.a, c1.a, c2.a, w0, w1, w2),
     ]
 }
 

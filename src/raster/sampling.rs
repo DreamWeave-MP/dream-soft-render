@@ -3,11 +3,13 @@
 use super::super::texture::TextureImage;
 use super::math::{f32_to_usize_round_clamped, usize_to_f32};
 use super::types::TriangleTexelSample;
+use crate::Vertex;
+use crate::geometry::Pos2;
 
 pub(crate) fn triangle_nearest_texel_sample(
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     texture: &TextureImage,
 ) -> TriangleTexelSample {
     if texture.width == 0 || texture.height == 0 {
@@ -18,9 +20,9 @@ pub(crate) fn triangle_nearest_texel_sample(
     }
 
     let texels = [
-        nearest_texel(texture, v0.uv),
-        nearest_texel(texture, v1.uv),
-        nearest_texel(texture, v2.uv),
+        nearest_texel(texture, v0.uv2()),
+        nearest_texel(texture, v1.uv2()),
+        nearest_texel(texture, v2.uv2()),
     ];
     let uniform_color = if texels[0] == texels[1] && texels[0] == texels[2] {
         Some(texel_color(texture, texels[0]))
@@ -34,7 +36,7 @@ pub(crate) fn triangle_nearest_texel_sample(
     }
 }
 
-pub(super) fn nearest_texel(texture: &TextureImage, uv: egui::Pos2) -> (usize, usize) {
+pub(super) fn nearest_texel(texture: &TextureImage, uv: Pos2) -> (usize, usize) {
     let x = f32_to_usize_round_clamped(
         uv.x.clamp(0.0, 1.0) * usize_to_f32(texture.width.saturating_sub(1)),
         texture.width.saturating_sub(1),
@@ -56,7 +58,7 @@ pub(super) fn texel_color(texture: &TextureImage, texel: (usize, usize)) -> [u8;
     ]
 }
 
-pub(super) fn sample_nearest(texture: &TextureImage, uv: egui::Pos2) -> [u8; 4] {
+pub(super) fn sample_nearest(texture: &TextureImage, uv: Pos2) -> [u8; 4] {
     if texture.width == 0 || texture.height == 0 {
         return [255, 255, 255, 255];
     }
@@ -66,6 +68,7 @@ pub(super) fn sample_nearest(texture: &TextureImage, uv: egui::Pos2) -> [u8; 4] 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::pos2;
 
     #[test]
     fn nearest_texture_sampling_clamps_to_edges() {
@@ -80,9 +83,9 @@ mod tests {
             ],
         };
 
-        assert_eq!(sample_nearest(&texture, egui::pos2(-1.0, -1.0))[0], 1);
-        assert_eq!(sample_nearest(&texture, egui::pos2(2.0, -1.0))[0], 2);
-        assert_eq!(sample_nearest(&texture, egui::pos2(-1.0, 2.0))[0], 3);
-        assert_eq!(sample_nearest(&texture, egui::pos2(2.0, 2.0))[0], 4);
+        assert_eq!(sample_nearest(&texture, pos2(-1.0, -1.0))[0], 1);
+        assert_eq!(sample_nearest(&texture, pos2(2.0, -1.0))[0], 2);
+        assert_eq!(sample_nearest(&texture, pos2(-1.0, 2.0))[0], 3);
+        assert_eq!(sample_nearest(&texture, pos2(2.0, 2.0))[0], 4);
     }
 }

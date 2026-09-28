@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::geometry::RasterMesh;
 use std::io;
 
 use super::stats::{
@@ -17,7 +18,7 @@ use crate::texture::TextureImage;
 
 pub(super) fn try_rasterize_quad_window(
     surface: &mut SoftwareSurface,
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     texture: &TextureImage,
     clip: ClipBounds,
     quad: &[u32],

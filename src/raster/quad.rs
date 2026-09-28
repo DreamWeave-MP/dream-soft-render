@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
+use crate::geometry::{Pos2, Vec2, pos2, vec2};
 use std::time::{Duration, Instant};
 
 use super::math::{
@@ -94,7 +96,7 @@ impl RasterStats {
 
 pub(crate) fn rasterize_axis_aligned_solid_quad(
     surface: &mut SoftwareSurface,
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
     texture: &TextureImage,
     clip: ClipBounds,
     stats: Option<&mut RasterStats>,
@@ -118,7 +120,7 @@ pub(crate) fn rasterize_axis_aligned_solid_quad(
 
 pub(crate) fn rasterize_axis_aligned_textured_quad(
     surface: &mut SoftwareSurface,
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
     texture: &TextureImage,
     clip: ClipBounds,
     stats: Option<&mut RasterStats>,
@@ -139,13 +141,13 @@ pub(crate) fn rasterize_axis_aligned_textured_quad(
 }
 
 pub(crate) fn textured_quad_fast_path_rejection(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
 ) -> Option<TexturedQuadFastPathRejection> {
     textured_quad_fast_path_candidate(vertices).err()
 }
 
 pub(crate) fn clear_elision_quad_evidence(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
     texture: &TextureImage,
     clip: ClipBounds,
     surface_width: usize,
@@ -158,7 +160,7 @@ pub(crate) fn clear_elision_quad_evidence(
     let cover_basis_points = surface_cover_basis_points(visible_px, surface_width, surface_height);
     let texture_color = textured_rect_constant_texel_color(candidate.corners, texture);
     let opaque_white_rect =
-        candidate.corners.tl.color.a() == u8::MAX && texture_color == Some([255, 255, 255, 255]);
+        candidate.corners.tl.color.a == u8::MAX && texture_color == Some([255, 255, 255, 255]);
     let near_full_surface_opaque_rect =
         opaque_white_rect && cover_basis_points >= CLEAR_ELISION_NEAR_FULL_SURFACE_BASIS_POINTS;
 
@@ -172,7 +174,7 @@ pub(crate) fn clear_elision_quad_evidence(
             rejection: Some(ClearElisionQuadRejection::TextureNotConstantWhite),
         };
     }
-    if candidate.corners.tl.color.a() != u8::MAX {
+    if candidate.corners.tl.color.a != u8::MAX {
         return ClearElisionQuadEvidence {
             visible_px,
             cover_basis_points,
@@ -213,19 +215,19 @@ pub(crate) fn clear_elision_quad_evidence(
     }
 }
 
-pub(crate) fn is_axis_aligned_quad(vertices: [&egui::epaint::Vertex; 6]) -> bool {
+pub(crate) fn is_axis_aligned_quad(vertices: [&Vertex; 6]) -> bool {
     triangles_share_rectangle_diagonal(vertices) && axis_aligned_quad_bounds(vertices).is_some()
 }
 
-fn triangles_share_rectangle_diagonal(vertices: [&egui::epaint::Vertex; 6]) -> bool {
-    if edge(vertices[0].pos, vertices[1].pos, vertices[2].pos).abs() <= f32::EPSILON
-        || edge(vertices[3].pos, vertices[4].pos, vertices[5].pos).abs() <= f32::EPSILON
+fn triangles_share_rectangle_diagonal(vertices: [&Vertex; 6]) -> bool {
+    if edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2()).abs() <= f32::EPSILON
+        || edge(vertices[3].pos2(), vertices[4].pos2(), vertices[5].pos2()).abs() <= f32::EPSILON
     {
         return false;
     }
 
-    let first = [vertices[0].pos, vertices[1].pos, vertices[2].pos];
-    let second = [vertices[3].pos, vertices[4].pos, vertices[5].pos];
+    let first = [vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2()];
+    let second = [vertices[3].pos2(), vertices[4].pos2(), vertices[5].pos2()];
     if same_pos2(first[0], first[1])
         || same_pos2(first[0], first[2])
         || same_pos2(first[1], first[2])
@@ -236,7 +238,7 @@ fn triangles_share_rectangle_diagonal(vertices: [&egui::epaint::Vertex; 6]) -> b
         return false;
     }
 
-    let mut shared = [egui::Pos2::ZERO; 2];
+    let mut shared = [Pos2::ZERO; 2];
     let mut shared_count = 0;
     for position in first {
         if second
@@ -257,7 +259,7 @@ fn triangles_share_rectangle_diagonal(vertices: [&egui::epaint::Vertex; 6]) -> b
 }
 
 fn textured_quad_fast_path_candidate(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
 ) -> Result<TexturedQuadFastPathCandidate, TexturedQuadFastPathRejection> {
     if let Some(candidate) = canonical_textured_quad_candidate(vertices) {
         return Ok(candidate);
@@ -273,13 +275,13 @@ fn textured_quad_fast_path_candidate(
 /// with `x0 < x1` and `y0 < y1`, and the general path's area, color, and affine-UV checks are
 /// repeated as-is. Anything else goes to the general search.
 fn canonical_textured_quad_candidate(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
 ) -> Option<TexturedQuadFastPathCandidate> {
     let [tl, tr, bl, bl_again, tr_again, br] = vertices;
     if !std::ptr::eq(bl, bl_again) || !std::ptr::eq(tr, tr_again) {
         return None;
     }
-    let (x0, y0, x1, y1) = (tl.pos.x, tl.pos.y, br.pos.x, br.pos.y);
+    let (x0, y0, x1, y1) = (tl.pos2().x, tl.pos2().y, br.pos2().x, br.pos2().y);
     let same = |left: f32, right: f32| left.to_bits() == right.to_bits();
     let axis_aligned_rect = x0.is_finite()
         && y0.is_finite()
@@ -287,23 +289,26 @@ fn canonical_textured_quad_candidate(
         && y1.is_finite()
         && x0 < x1
         && y0 < y1
-        && same(tr.pos.x, x1)
-        && same(tr.pos.y, y0)
-        && same(bl.pos.x, x0)
-        && same(bl.pos.y, y1);
+        && same(tr.pos2().x, x1)
+        && same(tr.pos2().y, y0)
+        && same(bl.pos2().x, x0)
+        && same(bl.pos2().y, y1);
     if !axis_aligned_rect {
         return None;
     }
-    if edge(tl.pos, tr.pos, bl.pos).abs() <= f32::EPSILON
-        || edge(bl.pos, tr.pos, br.pos).abs() <= f32::EPSILON
+    if edge(tl.pos2(), tr.pos2(), bl.pos2()).abs() <= f32::EPSILON
+        || edge(bl.pos2(), tr.pos2(), br.pos2()).abs() <= f32::EPSILON
         || tl.color != tr.color
         || tl.color != bl.color
         || tl.color != br.color
     {
         return None;
     }
-    let affine_br_uv = egui::pos2(tr.uv.x + bl.uv.x - tl.uv.x, tr.uv.y + bl.uv.y - tl.uv.y);
-    if !near_finite_pos2(br.uv, affine_br_uv, UV_AFFINE_EPSILON) {
+    let affine_br_uv = pos2(
+        tr.uv2().x + bl.uv2().x - tl.uv2().x,
+        tr.uv2().y + bl.uv2().y - tl.uv2().y,
+    );
+    if !near_finite_pos2(br.uv2(), affine_br_uv, UV_AFFINE_EPSILON) {
         return None;
     }
     Some(TexturedQuadFastPathCandidate {
@@ -323,7 +328,7 @@ fn canonical_textured_quad_candidate(
 }
 
 fn general_textured_quad_fast_path_candidate(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
 ) -> Result<TexturedQuadFastPathCandidate, TexturedQuadFastPathRejection> {
     if !triangles_share_rectangle_diagonal(vertices) {
         return Err(TexturedQuadFastPathRejection::NotRectangleDiagonal);
@@ -346,34 +351,34 @@ fn general_textured_quad_fast_path_candidate(
     {
         return Err(TexturedQuadFastPathRejection::NonUniformColor);
     }
-    let affine_br_uv = egui::pos2(
-        corners.tr.uv.x + corners.bl.uv.x - corners.tl.uv.x,
-        corners.tr.uv.y + corners.bl.uv.y - corners.tl.uv.y,
+    let affine_br_uv = pos2(
+        corners.tr.uv2().x + corners.bl.uv2().x - corners.tl.uv2().x,
+        corners.tr.uv2().y + corners.bl.uv2().y - corners.tl.uv2().y,
     );
-    if !near_finite_pos2(corners.br.uv, affine_br_uv, UV_AFFINE_EPSILON) {
+    if !near_finite_pos2(corners.br.uv2(), affine_br_uv, UV_AFFINE_EPSILON) {
         return Err(TexturedQuadFastPathRejection::NonAffineUv);
     }
 
     Ok(TexturedQuadFastPathCandidate { corners, bounds })
 }
 
-fn axis_aligned_quad_bounds(vertices: [&egui::epaint::Vertex; 6]) -> Option<QuadBounds> {
-    let mut positions = [egui::Pos2::ZERO; 4];
+fn axis_aligned_quad_bounds(vertices: [&Vertex; 6]) -> Option<QuadBounds> {
+    let mut positions = [Pos2::ZERO; 4];
     let mut position_count = 0;
     for vertex in vertices {
-        if !vertex.pos.x.is_finite() || !vertex.pos.y.is_finite() {
+        if !vertex.pos2().x.is_finite() || !vertex.pos2().y.is_finite() {
             return None;
         }
         if positions[..position_count]
             .iter()
-            .any(|position| same_pos2(*position, vertex.pos))
+            .any(|position| same_pos2(*position, vertex.pos2()))
         {
             continue;
         }
         if position_count == positions.len() {
             return None;
         }
-        positions[position_count] = vertex.pos;
+        positions[position_count] = vertex.pos2();
         position_count += 1;
     }
     if position_count != positions.len() {
@@ -407,7 +412,7 @@ fn axis_aligned_quad_bounds(vertices: [&egui::epaint::Vertex; 6]) -> Option<Quad
         for y in ys {
             if !positions
                 .iter()
-                .any(|position| same_pos2(*position, egui::pos2(x, y)))
+                .any(|position| same_pos2(*position, pos2(x, y)))
             {
                 return None;
             }
@@ -483,33 +488,30 @@ struct QuadBounds {
 
 #[derive(Clone, Copy)]
 struct TexturedQuadCorners {
-    tl: egui::epaint::Vertex,
-    tr: egui::epaint::Vertex,
-    bl: egui::epaint::Vertex,
-    br: egui::epaint::Vertex,
+    tl: Vertex,
+    tr: Vertex,
+    bl: Vertex,
+    br: Vertex,
 }
 
 fn textured_quad_corners(
-    vertices: [&egui::epaint::Vertex; 6],
+    vertices: [&Vertex; 6],
     min_x: f32,
     min_y: f32,
     max_x: f32,
     max_y: f32,
 ) -> Option<TexturedQuadCorners> {
-    let tl = matching_corner(vertices, egui::pos2(min_x, min_y))?;
-    let tr = matching_corner(vertices, egui::pos2(max_x, min_y))?;
-    let bl = matching_corner(vertices, egui::pos2(min_x, max_y))?;
-    let br = matching_corner(vertices, egui::pos2(max_x, max_y))?;
+    let tl = matching_corner(vertices, pos2(min_x, min_y))?;
+    let tr = matching_corner(vertices, pos2(max_x, min_y))?;
+    let bl = matching_corner(vertices, pos2(min_x, max_y))?;
+    let br = matching_corner(vertices, pos2(max_x, max_y))?;
     Some(TexturedQuadCorners { tl, tr, bl, br })
 }
 
-fn matching_corner(
-    vertices: [&egui::epaint::Vertex; 6],
-    position: egui::Pos2,
-) -> Option<egui::epaint::Vertex> {
+fn matching_corner(vertices: [&Vertex; 6], position: Pos2) -> Option<Vertex> {
     let mut corner = None;
     for vertex in vertices {
-        if !same_pos2(vertex.pos, position) {
+        if !same_pos2(vertex.pos2(), position) {
             continue;
         }
         if let Some(existing) = corner {
@@ -523,8 +525,8 @@ fn matching_corner(
     corner
 }
 
-fn same_vertex_attributes(left: egui::epaint::Vertex, right: egui::epaint::Vertex) -> bool {
-    left.color == right.color && same_pos2(left.uv, right.uv)
+fn same_vertex_attributes(left: Vertex, right: Vertex) -> bool {
+    left.color == right.color && same_pos2(left.uv2(), right.uv2())
 }
 
 fn push_unique_f32(values: &mut [f32; 2], count: &mut usize, value: f32) -> bool {
@@ -685,13 +687,18 @@ fn classify_textured_rect(
 }
 
 fn separable_textured_rect_uv(corners: TexturedQuadCorners) -> bool {
-    [corners.tl.uv, corners.tr.uv, corners.bl.uv, corners.br.uv]
-        .into_iter()
-        .all(|uv| uv.x.is_finite() && uv.y.is_finite())
-        && same_f32(corners.tl.uv.y, corners.tr.uv.y)
-        && same_f32(corners.bl.uv.y, corners.br.uv.y)
-        && same_f32(corners.tl.uv.x, corners.bl.uv.x)
-        && same_f32(corners.tr.uv.x, corners.br.uv.x)
+    [
+        corners.tl.uv2(),
+        corners.tr.uv2(),
+        corners.bl.uv2(),
+        corners.br.uv2(),
+    ]
+    .into_iter()
+    .all(|uv| uv.x.is_finite() && uv.y.is_finite())
+        && same_f32(corners.tl.uv2().y, corners.tr.uv2().y)
+        && same_f32(corners.bl.uv2().y, corners.br.uv2().y)
+        && same_f32(corners.tl.uv2().x, corners.bl.uv2().x)
+        && same_f32(corners.tr.uv2().x, corners.br.uv2().x)
 }
 
 fn textured_rect_constant_texel_color(
@@ -701,8 +708,8 @@ fn textured_rect_constant_texel_color(
     if texture.width == 0 || texture.height == 0 {
         return Some([255, 255, 255, 255]);
     }
-    let texel = nearest_texel(texture, corners.tl.uv);
-    let same_texel = [corners.tr.uv, corners.bl.uv, corners.br.uv]
+    let texel = nearest_texel(texture, corners.tl.uv2());
+    let same_texel = [corners.tr.uv2(), corners.bl.uv2(), corners.br.uv2()]
         .into_iter()
         .all(|uv| nearest_texel(texture, uv) == texel);
     same_texel.then(|| texel_color(texture, texel))
@@ -726,14 +733,14 @@ struct RectUvBasis {
 
 #[derive(Clone, Copy)]
 struct RectUvRow {
-    uv: egui::Pos2,
-    step_x: egui::Vec2,
+    uv: Pos2,
+    step_x: Vec2,
 }
 
 impl RectUvRow {
-    fn uv_at(self, x: usize, start_x: usize) -> egui::Pos2 {
+    fn uv_at(self, x: usize, start_x: usize) -> Pos2 {
         let dx = usize_to_f32(x - start_x);
-        egui::pos2(
+        pos2(
             self.step_x.x.mul_add(dx, self.uv.x),
             self.step_x.y.mul_add(dx, self.uv.y),
         )
@@ -797,7 +804,7 @@ fn rasterize_textured_rect_no_stats_with_color(
     texture: &TextureImage,
     range: RectRasterRange,
     uv_basis: RectUvBasis,
-    pixel_color: impl Fn(&TextureImage, egui::Pos2) -> [u8; 4],
+    pixel_color: impl Fn(&TextureImage, Pos2) -> [u8; 4],
 ) {
     for y in range.start_y..range.end_y {
         let row = textured_rect_uv_row(corners, range.start_x, y, uv_basis);
@@ -871,7 +878,7 @@ fn rasterize_textured_rect_with_stats_and_color(
     range: RectRasterRange,
     uv_basis: RectUvBasis,
     stats: &mut RasterStats,
-    pixel_color: impl Fn(&TextureImage, egui::Pos2) -> [u8; 4],
+    pixel_color: impl Fn(&TextureImage, Pos2) -> [u8; 4],
 ) {
     for y in range.start_y..range.end_y {
         let row = textured_rect_uv_row(corners, range.start_x, y, uv_basis);
@@ -2204,26 +2211,24 @@ fn textured_rect_uv_row(
     let sy = (usize_to_f32(y) + 0.5 - uv_basis.min_y) * uv_basis.inv_height;
     RectUvRow {
         uv: textured_rect_uv(corners, sx, sy),
-        step_x: egui::vec2(
-            (corners.tr.uv.x - corners.tl.uv.x) * uv_basis.inv_width,
-            (corners.tr.uv.y - corners.tl.uv.y) * uv_basis.inv_width,
+        step_x: vec2(
+            (corners.tr.uv2().x - corners.tl.uv2().x) * uv_basis.inv_width,
+            (corners.tr.uv2().y - corners.tl.uv2().y) * uv_basis.inv_width,
         ),
     }
 }
 
-fn textured_rect_uv(corners: TexturedQuadCorners, sx: f32, sy: f32) -> egui::Pos2 {
+fn textured_rect_uv(corners: TexturedQuadCorners, sx: f32, sy: f32) -> Pos2 {
     let tl_weight = 1.0 - sx - sy;
-    egui::pos2(
-        corners
-            .tl
-            .uv
-            .x
-            .mul_add(tl_weight, corners.tr.uv.x.mul_add(sx, corners.bl.uv.x * sy)),
-        corners
-            .tl
-            .uv
-            .y
-            .mul_add(tl_weight, corners.tr.uv.y.mul_add(sx, corners.bl.uv.y * sy)),
+    pos2(
+        corners.tl.uv2().x.mul_add(
+            tl_weight,
+            corners.tr.uv2().x.mul_add(sx, corners.bl.uv2().x * sy),
+        ),
+        corners.tl.uv2().y.mul_add(
+            tl_weight,
+            corners.tr.uv2().y.mul_add(sx, corners.bl.uv2().y * sy),
+        ),
     )
 }
 
@@ -2239,6 +2244,7 @@ fn solid_rect_boundary_index(boundary: f32, clip_max: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Color;
 
     #[test]
     fn canonical_textured_quad_candidate_matches_general_search() {
@@ -2268,13 +2274,13 @@ mod tests {
             let skew_br_uv = next(10) == 0;
             let color = |vertex: u32| {
                 let red = if vertex == odd_color_vertex { 200 } else { 9 };
-                egui::Color32::from_rgba_premultiplied(red, 1, 2, 3)
+                Color::from_rgba_premultiplied(red, 1, 2, 3)
             };
             let (u0, v0, u1, v1) = (0.125, 0.25, 0.375, 0.5);
             let br_u = if skew_br_uv { u1 + 0.01 } else { u1 };
-            let vertex = |x: f32, y: f32, u: f32, v: f32, index: u32| egui::epaint::Vertex {
-                pos: egui::pos2(x, y),
-                uv: egui::pos2(u, v),
+            let vertex = |x: f32, y: f32, u: f32, v: f32, index: u32| Vertex {
+                pos: [x, y],
+                uv: [u, v],
                 color: color(index),
             };
             let quad = [
@@ -2292,12 +2298,17 @@ mod tests {
                 .unwrap_or_else(|_| panic!("general search rejected {quad:?}"));
             let bits = |candidate: &TexturedQuadFastPathCandidate| {
                 let TexturedQuadFastPathCandidate { corners, bounds } = candidate;
-                let vertex_bits = |vertex: &egui::epaint::Vertex| {
-                    [vertex.pos.x, vertex.pos.y, vertex.uv.x, vertex.uv.y]
-                        .map(f32::to_bits)
-                        .into_iter()
-                        .chain([u32::from_le_bytes(vertex.color.to_array())])
-                        .collect::<Vec<_>>()
+                let vertex_bits = |vertex: &Vertex| {
+                    [
+                        vertex.pos2().x,
+                        vertex.pos2().y,
+                        vertex.uv2().x,
+                        vertex.uv2().y,
+                    ]
+                    .map(f32::to_bits)
+                    .into_iter()
+                    .chain([u32::from_le_bytes(vertex.color.to_array())])
+                    .collect::<Vec<_>>()
                 };
                 [&corners.tl, &corners.tr, &corners.bl, &corners.br]
                     .into_iter()
@@ -2378,14 +2389,14 @@ mod tests {
     #[test]
     fn separable_uv_textured_rect_matches_generic_for_clipped_flipped_modulated_texture() {
         let corners = textured_rect_corners(
-            egui::pos2(1.25, 0.75),
-            egui::pos2(6.75, 4.25),
+            pos2(1.25, 0.75),
+            pos2(6.75, 4.25),
             [96, 160, 224, 192],
             [
-                egui::pos2(1.0, 1.0),
-                egui::pos2(0.0, 1.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 0.0),
+                pos2(1.0, 1.0),
+                pos2(0.0, 1.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
             ],
         );
         let texture = mixed_alpha_texture();
@@ -2408,14 +2419,14 @@ mod tests {
     #[test]
     fn separable_uv_textured_rect_matches_generic_for_white_vertex_color() {
         let corners = textured_rect_corners(
-            egui::pos2(0.6, 0.4),
-            egui::pos2(5.4, 3.6),
+            pos2(0.6, 0.4),
+            pos2(5.4, 3.6),
             [255, 255, 255, 255],
             [
-                egui::pos2(-0.25, 0.2),
-                egui::pos2(1.25, 0.2),
-                egui::pos2(-0.25, 0.9),
-                egui::pos2(1.25, 0.9),
+                pos2(-0.25, 0.2),
+                pos2(1.25, 0.2),
+                pos2(-0.25, 0.9),
+                pos2(1.25, 0.9),
             ],
         );
         let texture = mixed_alpha_texture();
@@ -2432,14 +2443,14 @@ mod tests {
     #[test]
     fn separable_direct_textured_rect_matches_generic_for_alternating_alpha_row() {
         let corners = textured_rect_corners(
-            egui::pos2(0.0, 2.0),
-            egui::pos2(8.0, 3.0),
+            pos2(0.0, 2.0),
+            pos2(8.0, 3.0),
             [255, 255, 255, 255],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
             ],
         );
         let texture = alternating_alpha_row_texture();
@@ -2456,14 +2467,14 @@ mod tests {
     #[test]
     fn separable_direct_textured_rect_treats_transparent_texel_rgb_as_no_op() {
         let corners = textured_rect_corners(
-            egui::pos2(1.0, 1.0),
-            egui::pos2(5.0, 2.0),
+            pos2(1.0, 1.0),
+            pos2(5.0, 2.0),
             [255, 255, 255, 255],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
             ],
         );
         let texture = transparent_varying_rgb_texture();
@@ -2480,14 +2491,14 @@ mod tests {
     #[test]
     fn separable_direct_textured_rect_matches_generic_for_modulated_vertex_color() {
         let corners = textured_rect_corners(
-            egui::pos2(1.0, 1.0),
-            egui::pos2(5.0, 4.0),
+            pos2(1.0, 1.0),
+            pos2(5.0, 4.0),
             [64, 128, 192, 160],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 1.0),
-                egui::pos2(1.0, 1.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 1.0),
+                pos2(1.0, 1.0),
             ],
         );
         let texture = mixed_alpha_texture();
@@ -2510,14 +2521,14 @@ mod tests {
     #[test]
     fn separable_direct_textured_rect_matches_generic_for_clipped_rect() {
         let corners = textured_rect_corners(
-            egui::pos2(0.0, 0.0),
-            egui::pos2(8.0, 5.0),
+            pos2(0.0, 0.0),
+            pos2(8.0, 5.0),
             [255, 255, 255, 255],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 1.0),
-                egui::pos2(1.0, 1.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 1.0),
+                pos2(1.0, 1.0),
             ],
         );
         let texture = mixed_alpha_texture();
@@ -2549,25 +2560,25 @@ mod tests {
             max_y: 4.0,
         };
         let separable = textured_rect_corners(
-            egui::pos2(1.0, 1.0),
-            egui::pos2(5.0, 4.0),
+            pos2(1.0, 1.0),
+            pos2(5.0, 4.0),
             [255; 4],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 1.0),
-                egui::pos2(1.0, 1.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 1.0),
+                pos2(1.0, 1.0),
             ],
         );
         let nonseparable = textured_rect_corners(
-            egui::pos2(1.0, 1.0),
-            egui::pos2(5.0, 4.0),
+            pos2(1.0, 1.0),
+            pos2(5.0, 4.0),
             [255; 4],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.2),
-                egui::pos2(0.2, 1.0),
-                egui::pos2(1.2, 1.2),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.2),
+                pos2(0.2, 1.0),
+                pos2(1.2, 1.2),
             ],
         );
 
@@ -3100,14 +3111,14 @@ mod tests {
             max_y: 1.0,
         };
         let corners = textured_rect_corners(
-            egui::pos2(0.0, 0.0),
-            egui::pos2(32.0, 1.0),
+            pos2(0.0, 0.0),
+            pos2(32.0, 1.0),
             [255; 4],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
             ],
         );
 
@@ -3151,14 +3162,14 @@ mod tests {
             max_y: 4.0,
         };
         let corners = textured_rect_corners(
-            egui::pos2(1.0, 1.0),
-            egui::pos2(5.0, 4.0),
+            pos2(1.0, 1.0),
+            pos2(5.0, 4.0),
             [255; 4],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(0.1, 0.0),
-                egui::pos2(0.0, 0.1),
-                egui::pos2(0.1, 0.1),
+                pos2(0.0, 0.0),
+                pos2(0.1, 0.0),
+                pos2(0.0, 0.1),
+                pos2(0.1, 0.1),
             ],
         );
 
@@ -3192,14 +3203,14 @@ mod tests {
             max_y: 3.0,
         };
         let corners = textured_rect_corners(
-            egui::pos2(1.0, 1.0),
-            egui::pos2(3.0, 3.0),
+            pos2(1.0, 1.0),
+            pos2(3.0, 3.0),
             [255; 4],
             [
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 0.0),
-                egui::pos2(0.0, 1.0),
-                egui::pos2(1.0, 1.0),
+                pos2(0.0, 0.0),
+                pos2(1.0, 0.0),
+                pos2(0.0, 1.0),
+                pos2(1.0, 1.0),
             ],
         );
 
@@ -3320,10 +3331,10 @@ mod tests {
     }
 
     fn textured_rect_corners(
-        min: egui::Pos2,
-        max: egui::Pos2,
+        min: Pos2,
+        max: Pos2,
         color: [u8; 4],
-        uvs: [egui::Pos2; 4],
+        uvs: [Pos2; 4],
     ) -> TexturedQuadCorners {
         TexturedQuadCorners {
             tl: vertex(min.x, min.y, color, uvs[0]),
@@ -3336,23 +3347,23 @@ mod tests {
     fn vector_eligible_row_corners(width: usize, color: [u8; 4]) -> TexturedQuadCorners {
         let max_texel = usize_to_f32(width - 1);
         textured_rect_corners(
-            egui::pos2(0.0, 0.0),
-            egui::pos2(usize_to_f32(width), 1.0),
+            pos2(0.0, 0.0),
+            pos2(usize_to_f32(width), 1.0),
             color,
             [
-                egui::pos2(-0.5 / max_texel, 0.0),
-                egui::pos2((usize_to_f32(width) - 0.5) / max_texel, 0.0),
-                egui::pos2(-0.5 / max_texel, 0.0),
-                egui::pos2((usize_to_f32(width) - 0.5) / max_texel, 0.0),
+                pos2(-0.5 / max_texel, 0.0),
+                pos2((usize_to_f32(width) - 0.5) / max_texel, 0.0),
+                pos2(-0.5 / max_texel, 0.0),
+                pos2((usize_to_f32(width) - 0.5) / max_texel, 0.0),
             ],
         )
     }
 
-    fn vertex(x: f32, y: f32, color: [u8; 4], uv: egui::Pos2) -> egui::epaint::Vertex {
-        egui::epaint::Vertex {
-            pos: egui::pos2(x, y),
-            color: egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]),
-            uv,
+    fn vertex(x: f32, y: f32, color: [u8; 4], uv: Pos2) -> Vertex {
+        Vertex {
+            pos: [x, y],
+            color: Color::from_rgba_premultiplied(color[0], color[1], color[2], color[3]),
+            uv: [uv.x, uv.y],
         }
     }
 

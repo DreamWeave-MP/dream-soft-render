@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
 use std::time::Duration;
 
 use super::surface::SoftwareSurface;
@@ -56,14 +57,14 @@ fn duration_as_us(duration: Duration) -> usize {
 
 pub(super) fn rasterize_triangle(
     surface: &mut SoftwareSurface,
-    v0: &egui::epaint::Vertex,
-    v1: &egui::epaint::Vertex,
-    v2: &egui::epaint::Vertex,
+    v0: &Vertex,
+    v1: &Vertex,
+    v2: &Vertex,
     texture: &TextureImage,
     clip: ClipBounds,
     mut stats: Option<&mut RasterStats>,
 ) {
-    let area = edge(v0.pos, v1.pos, v2.pos);
+    let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
     if area.abs() <= f32::EPSILON {
         if let Some(stats) = stats {
             stats.degenerate_triangle_skips += 1;
@@ -105,6 +106,8 @@ pub(super) fn rasterize_triangle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Color;
+    use crate::geometry::pos2;
 
     #[test]
     fn triangle_rasterizer_draws_into_tiny_surface() {
@@ -136,12 +139,12 @@ mod tests {
         let mut v0 = test_vertex(0.0, 0.0);
         let mut v1 = test_vertex(4.0, 0.0);
         let mut v2 = test_vertex(0.0, 4.0);
-        v0.color = egui::Color32::from_rgba_premultiplied(128, 64, 32, 255);
+        v0.color = Color::from_rgba_premultiplied(128, 64, 32, 255);
         v1.color = v0.color;
         v2.color = v0.color;
-        v0.uv = egui::pos2(0.0, 0.0);
-        v1.uv = egui::pos2(0.2, 0.2);
-        v2.uv = egui::pos2(0.49, 0.49);
+        v0.uv = [0.0, 0.0];
+        v1.uv = [0.2, 0.2];
+        v2.uv = [0.49, 0.49];
 
         assert_eq!(
             solid_triangle_color(&v0, &v1, &v2, &texture),
@@ -166,12 +169,12 @@ mod tests {
         let mut v0 = test_vertex(0.0, 0.0);
         let mut v1 = test_vertex(3.0, 0.0);
         let mut v2 = test_vertex(0.0, 3.0);
-        v0.color = egui::Color32::from_rgba_premultiplied(20, 40, 60, 128);
+        v0.color = Color::from_rgba_premultiplied(20, 40, 60, 128);
         v1.color = v0.color;
         v2.color = v0.color;
-        v0.uv = egui::pos2(0.0, 0.0);
-        v1.uv = egui::pos2(1.0, 0.0);
-        v2.uv = egui::pos2(0.0, 1.0);
+        v0.uv = [0.0, 0.0];
+        v1.uv = [1.0, 0.0];
+        v2.uv = [0.0, 1.0];
 
         assert_eq!(
             solid_triangle_color(&v0, &v1, &v2, &texture),
@@ -189,20 +192,20 @@ mod tests {
         let mut v0 = test_vertex(0.0, 0.0);
         let mut v1 = test_vertex(3.0, 0.0);
         let mut v2 = test_vertex(0.0, 3.0);
-        v0.color = egui::Color32::from_rgb(64, 64, 64);
-        v1.color = egui::Color32::from_rgb(65, 64, 64);
+        v0.color = Color::from_rgb(64, 64, 64);
+        v1.color = Color::from_rgb(65, 64, 64);
         v2.color = v0.color;
-        v0.uv = egui::pos2(0.0, 0.0);
-        v1.uv = egui::pos2(0.0, 0.0);
-        v2.uv = egui::pos2(0.0, 0.0);
+        v0.uv = [0.0, 0.0];
+        v1.uv = [0.0, 0.0];
+        v2.uv = [0.0, 0.0];
 
         assert_eq!(solid_triangle_color(&v0, &v1, &v2, &texture), None);
 
         v1.color = v0.color;
         v2.color = v0.color;
-        v0.uv = egui::pos2(0.0, 0.0);
-        v1.uv = egui::pos2(1.0, 0.0);
-        v2.uv = egui::pos2(0.0, 0.0);
+        v0.uv = [0.0, 0.0];
+        v1.uv = [1.0, 0.0];
+        v2.uv = [0.0, 0.0];
 
         assert_eq!(solid_triangle_color(&v0, &v1, &v2, &texture), None);
     }
@@ -215,9 +218,9 @@ mod tests {
             solid_vertex(5.25, 1.0, [200, 48, 16, 192]),
             solid_vertex(1.25, 5.5, [64, 180, 220, 96]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
 
         assert_eq!(
             solid_triangle_color(&vertices[0], &vertices[1], &vertices[2], &texture),
@@ -242,9 +245,9 @@ mod tests {
             solid_vertex(258.0, 3.0, [249, 5, 229, 241]),
             solid_vertex(2.0, 24.0, [71, 137, 43, 149]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
 
         assert_eq!(
             triangle_nearest_texel_sample(&vertices[0], &vertices[1], &vertices[2], &texture)
@@ -272,9 +275,9 @@ mod tests {
             solid_vertex(185.75, 38.25, [227, 19, 211, 233]),
             solid_vertex(36.5, 149.75, [83, 151, 67, 127]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let bounds = triangle_raster_bounds(
             &vertices[0],
             &vertices[1],
@@ -412,9 +415,9 @@ mod tests {
             solid_vertex(5.25, 1.0, [241, 37, 71, 173]),
             solid_vertex(1.25, 5.5, [83, 219, 29, 67]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
 
         let routed =
             render_test_triangle_with(7, 7, &vertices[0], &vertices[1], &vertices[2], &texture);
@@ -422,8 +425,7 @@ mod tests {
             render_test_triangle_generic(7, 7, &vertices[0], &vertices[1], &vertices[2], &texture);
         let premodulated_vertices = vertices.map(|mut vertex| {
             let color = modulate_color(color_to_array(vertex.color), texture_color);
-            vertex.color =
-                egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
+            vertex.color = Color::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
             vertex
         });
         let premodulated = render_test_triangle_with(
@@ -452,9 +454,9 @@ mod tests {
             solid_vertex(4.0, 0.0, [241, 37, 71, 173]),
             solid_vertex(0.0, 4.0, [83, 219, 29, 67]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let mut surface = test_surface(5, 5);
         let mut stats = RasterStats::default();
 
@@ -516,9 +518,9 @@ mod tests {
             solid_vertex(4.0, 0.0, [0, 255, 0, 255]),
             solid_vertex(0.0, 4.0, [0, 0, 255, 255]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
 
         rasterize_triangle(
             &mut surface,
@@ -593,13 +595,13 @@ mod tests {
             solid_vertex(42.0, 2.0, [255, 0, 0, 255]),
             solid_vertex(3.0, 38.0, [0, 0, 96, 96]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let clip = full_clip(48, 42);
         let bounds = triangle_raster_bounds(&vertices[0], &vertices[1], &vertices[2], clip)
             .expect("triangle bounds");
-        let area = edge(vertices[0].pos, vertices[1].pos, vertices[2].pos);
+        let area = edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2());
         let mut constant_surface = test_surface(48, 42);
         let mut sampled_surface = test_surface(48, 42);
         let mut constant_stats = RasterStats::default();
@@ -698,13 +700,13 @@ mod tests {
             solid_vertex(4.0, 0.0, [255, 255, 255, 255]),
             solid_vertex(0.0, 4.0, [255, 255, 255, 255]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(1.0, 0.0);
-        vertices[2].uv = egui::pos2(0.0, 0.0);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [1.0, 0.0];
+        vertices[2].uv = [0.0, 0.0];
         let clip = full_clip(5, 5);
         let bounds = triangle_raster_bounds(&vertices[0], &vertices[1], &vertices[2], clip)
             .expect("triangle bounds");
-        let area = edge(vertices[0].pos, vertices[1].pos, vertices[2].pos);
+        let area = edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2());
         let mut surface = test_surface(5, 5);
         let mut stats = RasterStats::default();
 
@@ -734,13 +736,13 @@ mod tests {
             solid_vertex(42.0, 2.0, [255, 255, 255, 255]),
             solid_vertex(3.0, 38.0, [255, 255, 255, 96]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let clip = full_clip(48, 42);
         let bounds = triangle_raster_bounds(&vertices[0], &vertices[1], &vertices[2], clip)
             .expect("triangle bounds");
-        let area = edge(vertices[0].pos, vertices[1].pos, vertices[2].pos);
+        let area = edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2());
         let mut constant_surface = test_surface(48, 42);
         let mut sampled_surface = test_surface(48, 42);
         let mut constant_stats = RasterStats::default();
@@ -807,13 +809,13 @@ mod tests {
             solid_vertex(4.0, 0.0, [128, 64, 32, 255]),
             solid_vertex(0.0, 4.0, [128, 64, 32, 96]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let clip = full_clip(5, 5);
         let bounds = triangle_raster_bounds(&vertices[0], &vertices[1], &vertices[2], clip)
             .expect("triangle bounds");
-        let area = edge(vertices[0].pos, vertices[1].pos, vertices[2].pos);
+        let area = edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2());
         let mut constant_surface = test_surface(5, 5);
         let mut sampled_surface = test_surface(5, 5);
         let mut constant_stats = RasterStats::default();
@@ -882,13 +884,13 @@ mod tests {
             solid_vertex(4.0, 0.0, [255, 255, 255, 255]),
             solid_vertex(0.0, 4.0, [255, 255, 255, 255]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let clip = full_clip(5, 5);
         let bounds = triangle_raster_bounds(&vertices[0], &vertices[1], &vertices[2], clip)
             .expect("triangle bounds");
-        let area = edge(vertices[0].pos, vertices[1].pos, vertices[2].pos);
+        let area = edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2());
         let mut constant_surface = test_surface(5, 5);
         let mut sampled_surface = test_surface(5, 5);
         let mut constant_stats = RasterStats::default();
@@ -963,9 +965,9 @@ mod tests {
             solid_vertex(4.0, 0.0, [64, 0, 0, 0]),
             solid_vertex(0.0, 4.0, [0, 64, 0, 0]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(0.2, 0.1);
-        vertices[2].uv = egui::pos2(0.49, 0.49);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [0.2, 0.1];
+        vertices[2].uv = [0.49, 0.49];
         let mut constant_surface = test_surface(5, 5);
         let mut sampled_surface = test_surface(5, 5);
         let mut constant_stats = RasterStats::default();
@@ -1000,7 +1002,7 @@ mod tests {
             &texture,
             triangle_raster_bounds(&vertices[0], &vertices[1], &vertices[2], full_clip(5, 5))
                 .expect("triangle bounds"),
-            edge(vertices[0].pos, vertices[1].pos, vertices[2].pos),
+            edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2()),
             Some(&mut sampled_stats),
         );
 
@@ -1442,9 +1444,9 @@ mod tests {
             solid_vertex(517.5, 457.5, [192, 96, 48, 224]),
             solid_vertex(125.5, 212.9, [192, 96, 48, 224]),
         ];
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(1.0, 0.0);
-        vertices[2].uv = egui::pos2(0.0, 1.0);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [1.0, 0.0];
+        vertices[2].uv = [0.0, 1.0];
         let clip = full_clip(640, 480);
         let texture = test_texture_4x4();
 
@@ -1505,7 +1507,7 @@ mod tests {
             TriangleClassification::Solid
         );
 
-        v1.uv = egui::pos2(1.0, 0.0);
+        v1.uv = [1.0, 0.0];
         assert_eq!(
             classify_triangle(&v0, &v1, &v2, &texture),
             TriangleClassification::Textured
@@ -1794,8 +1796,8 @@ mod tests {
     fn solid_fan_span_cache_distinguishes_same_bounds_different_geometry() {
         let first = solid_fan_vertices([40, 120, 20, 192]);
         let mut second = first.clone();
-        second[1].pos.x += 0.25;
-        second[2].pos.y += 0.25;
+        second[1].pos[0] += 0.25;
+        second[2].pos[1] += 0.25;
         let first_polygon = test_solid_fan_polygon(&first);
         let second_polygon = test_solid_fan_polygon(&second);
         let clip = full_clip(12, 12);
@@ -1955,7 +1957,7 @@ mod tests {
         let mut stats = RasterStats::default();
         let mut constant = textured_quad_vertices(0.0, 0.0, 2.0, 2.0, [255, 255, 255, 255]);
         for vertex in &mut constant {
-            vertex.uv = egui::pos2(0.0, 0.0);
+            vertex.uv = [0.0, 0.0];
         }
 
         assert!(rasterize_axis_aligned_textured_quad(
@@ -2067,8 +2069,8 @@ mod tests {
 
         let texture = test_texture_2x2();
         let mut textured = solid;
-        textured[1].uv = egui::pos2(1.0, 0.0);
-        textured[2].uv = egui::pos2(0.0, 1.0);
+        textured[1].uv = [1.0, 0.0];
+        textured[2].uv = [0.0, 1.0];
         rasterize_triangle(
             &mut surface,
             &textured[0],
@@ -2139,7 +2141,7 @@ mod tests {
 
     #[test]
     fn solid_triangle_edges_cover_shared_diagonal_once() {
-        let color = egui::Color32::from_rgba_premultiplied(128, 0, 0, 128);
+        let color = Color::from_rgba_premultiplied(128, 0, 0, 128);
         let mut top_left = test_vertex(0.0, 0.0);
         let mut top_right = test_vertex(3.0, 0.0);
         let mut bottom_left = test_vertex(0.0, 3.0);
@@ -2182,15 +2184,15 @@ mod tests {
 
     #[test]
     fn textured_triangle_edges_cover_shared_diagonal_once() {
-        let color = egui::Color32::from_rgba_premultiplied(128, 0, 0, 128);
+        let color = Color::from_rgba_premultiplied(128, 0, 0, 128);
         let mut top_left = test_vertex(0.0, 0.0);
         let mut top_right = test_vertex(3.0, 0.0);
         let mut bottom_left = test_vertex(0.0, 3.0);
         let mut bottom_right = test_vertex(3.0, 3.0);
-        top_left.uv = egui::pos2(0.0, 0.0);
-        top_right.uv = egui::pos2(1.0, 0.0);
-        bottom_left.uv = egui::pos2(0.0, 1.0);
-        bottom_right.uv = egui::pos2(1.0, 1.0);
+        top_left.uv = [0.0, 0.0];
+        top_right.uv = [1.0, 0.0];
+        bottom_left.uv = [0.0, 1.0];
+        bottom_right.uv = [1.0, 1.0];
         for vertex in [
             &mut top_left,
             &mut top_right,
@@ -2264,7 +2266,7 @@ mod tests {
     #[test]
     fn axis_aligned_quad_fast_path_rejects_non_axis_aligned_quad() {
         let mut vertices = test_quad_vertices();
-        vertices[3].pos.x = 4.5;
+        vertices[3].pos[0] = 4.5;
 
         let (accepted, pixels) = render_test_quad(5, 5, vertices, full_clip(5, 5));
 
@@ -2276,7 +2278,7 @@ mod tests {
     fn axis_aligned_quad_fast_path_rejects_non_solid_quad() {
         let texture = test_texture_2x2();
         let mut vertices = test_quad_vertices();
-        vertices[3].uv = egui::pos2(1.0, 1.0);
+        vertices[3].uv = [1.0, 1.0];
         let mut surface = test_surface(5, 5);
 
         let accepted = rasterize_axis_aligned_solid_quad(
@@ -2310,7 +2312,7 @@ mod tests {
             &vertices[2],
         ]));
 
-        vertices[3].pos.x = 4.5;
+        vertices[3].pos[0] = 4.5;
         assert!(!is_axis_aligned_quad([
             &vertices[0],
             &vertices[1],
@@ -2325,7 +2327,7 @@ mod tests {
     fn axis_aligned_quad_fast_path_matches_generic_translucent_solid_rectangle() {
         let mut vertices = test_quad_vertices();
         for vertex in &mut vertices {
-            vertex.color = egui::Color32::from_rgba_premultiplied(128, 128, 128, 128);
+            vertex.color = Color::from_rgba_premultiplied(128, 128, 128, 128);
         }
 
         let (accepted, pixels) = render_test_quad(5, 5, vertices, full_clip(5, 5));
@@ -2341,7 +2343,7 @@ mod tests {
     fn axis_aligned_quad_fast_path_matches_generic_clipped_translucent_solid_rectangle() {
         let mut vertices = test_quad_vertices();
         for vertex in &mut vertices {
-            vertex.color = egui::Color32::from_rgba_premultiplied(64, 32, 16, 128);
+            vertex.color = Color::from_rgba_premultiplied(64, 32, 16, 128);
         }
         let clip = ClipBounds {
             min_x: 2,
@@ -2423,7 +2425,7 @@ mod tests {
         let vertices = textured_quad_vertices(1.0, 1.0, 24.0, 2.0, [255, 255, 255, 255]);
         let texture = test_alpha_texture_2x1();
 
-        assert_eq!(nearest_texel(&texture, egui::pos2(0.5, 0.0)), (1, 0));
+        assert_eq!(nearest_texel(&texture, pos2(0.5, 0.0)), (1, 0));
 
         let (accepted, pixels) =
             render_test_textured_quad(26, 4, vertices, &texture, full_clip(26, 4));
@@ -2543,13 +2545,13 @@ mod tests {
     #[test]
     fn textured_quad_fast_path_accepts_rounded_affine_uv() {
         let mut vertices = textured_quad_vertices(1.0, 1.0, 5.0, 4.0, [192, 96, 48, 128]);
-        vertices[0].uv = egui::pos2(0.02, 0.02);
-        vertices[1].uv = egui::pos2(0.10, 0.02);
-        vertices[2].uv = egui::pos2(0.02, 0.10);
-        vertices[3].uv = egui::pos2(
+        vertices[0].uv = [0.02, 0.02];
+        vertices[1].uv = [0.10, 0.02];
+        vertices[2].uv = [0.02, 0.10];
+        vertices[3].uv = [
             0.10 + UV_AFFINE_EPSILON * 0.5,
             0.10 - UV_AFFINE_EPSILON * 0.5,
-        );
+        ];
         let texture = test_texture_4x4();
 
         let (accepted, pixels) =
@@ -2563,7 +2565,7 @@ mod tests {
     #[test]
     fn textured_quad_fast_path_rejects_non_affine_uv() {
         let mut vertices = textured_quad_vertices(1.0, 1.0, 5.0, 4.0, [255, 255, 255, 255]);
-        vertices[3].uv = egui::pos2(0.75, 0.5);
+        vertices[3].uv = [0.75, 0.5];
         let texture = test_texture_4x4();
 
         let (accepted, pixels) =
@@ -2580,7 +2582,7 @@ mod tests {
     #[test]
     fn textured_quad_fast_path_rejects_non_uniform_vertex_color() {
         let mut vertices = textured_quad_vertices(1.0, 1.0, 5.0, 4.0, [255, 255, 255, 255]);
-        vertices[2].color = egui::Color32::from_rgba_premultiplied(128, 128, 128, 255);
+        vertices[2].color = Color::from_rgba_premultiplied(128, 128, 128, 255);
         let texture = test_texture_4x4();
 
         let (accepted, pixels) =
@@ -2604,7 +2606,7 @@ mod tests {
         );
     }
 
-    fn quad_vertex_refs(vertices: &[egui::epaint::Vertex; 4]) -> [&egui::epaint::Vertex; 6] {
+    fn quad_vertex_refs(vertices: &[Vertex; 4]) -> [&Vertex; 6] {
         [
             &vertices[0],
             &vertices[1],
@@ -2618,9 +2620,9 @@ mod tests {
     fn render_test_triangle(
         width: usize,
         height: usize,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
     ) -> Vec<u8> {
         let texture = TextureImage {
             width: 1,
@@ -2634,9 +2636,9 @@ mod tests {
     fn render_test_triangle_with(
         width: usize,
         height: usize,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
         texture: &TextureImage,
     ) -> Vec<u8> {
         let mut surface = test_surface(width, height);
@@ -2664,7 +2666,7 @@ mod tests {
         height: usize,
         clip: ClipBounds,
         background: [u8; 4],
-        vertices: [egui::epaint::Vertex; 3],
+        vertices: [Vertex; 3],
     ) {
         let texture = test_white_texture();
         let color = solid_triangle_color(&vertices[0], &vertices[1], &vertices[2], &texture)
@@ -2692,7 +2694,7 @@ mod tests {
                     v2: &vertices[2],
                 },
                 bounds,
-                edge(vertices[0].pos, vertices[1].pos, vertices[2].pos),
+                edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2()),
                 color,
                 None,
             );
@@ -2715,7 +2717,7 @@ mod tests {
         height: usize,
         clip: ClipBounds,
         background: [u8; 4],
-        vertices: [egui::epaint::Vertex; 3],
+        vertices: [Vertex; 3],
         texture: &TextureImage,
     ) {
         assert_eq!(
@@ -2746,7 +2748,7 @@ mod tests {
                 },
                 texture,
                 bounds,
-                edge(vertices[0].pos, vertices[1].pos, vertices[2].pos),
+                edge(vertices[0].pos2(), vertices[1].pos2(), vertices[2].pos2()),
                 None,
             );
         }
@@ -2766,7 +2768,7 @@ mod tests {
     fn assert_white_constant_texel_alpha_only_matches_generic(
         width: usize,
         height: usize,
-        vertices: [egui::epaint::Vertex; 3],
+        vertices: [Vertex; 3],
     ) {
         let texture = test_white_texture();
 
@@ -2802,13 +2804,13 @@ mod tests {
 
     fn reference_rasterize_solid_triangle(
         surface: &mut SoftwareSurface,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
         clip: ClipBounds,
         color: [u8; 4],
     ) {
-        let area = edge(v0.pos, v1.pos, v2.pos);
+        let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
         if area.abs() <= f32::EPSILON {
             return;
         }
@@ -2816,16 +2818,16 @@ mod tests {
             return;
         };
         let inv_area = 1.0 / area;
-        let edge0_includes_boundary = edge_includes_boundary(v1.pos, v2.pos, area);
-        let edge1_includes_boundary = edge_includes_boundary(v2.pos, v0.pos, area);
-        let edge2_includes_boundary = edge_includes_boundary(v0.pos, v1.pos, area);
+        let edge0_includes_boundary = edge_includes_boundary(v1.pos2(), v2.pos2(), area);
+        let edge1_includes_boundary = edge_includes_boundary(v2.pos2(), v0.pos2(), area);
+        let edge2_includes_boundary = edge_includes_boundary(v0.pos2(), v1.pos2(), area);
 
         for y in bounds.min_y..bounds.max_y {
             for x in bounds.min_x..bounds.max_x {
-                let pixel_center = egui::pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
-                let w0 = edge(v1.pos, v2.pos, pixel_center) * inv_area;
-                let w1 = edge(v2.pos, v0.pos, pixel_center) * inv_area;
-                let w2 = edge(v0.pos, v1.pos, pixel_center) * inv_area;
+                let pixel_center = pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
+                let w0 = edge(v1.pos2(), v2.pos2(), pixel_center) * inv_area;
+                let w1 = edge(v2.pos2(), v0.pos2(), pixel_center) * inv_area;
+                let w2 = edge(v0.pos2(), v1.pos2(), pixel_center) * inv_area;
                 if edge_covers_pixel(w0, edge0_includes_boundary)
                     && edge_covers_pixel(w1, edge1_includes_boundary)
                     && edge_covers_pixel(w2, edge2_includes_boundary)
@@ -2838,13 +2840,13 @@ mod tests {
 
     fn reference_rasterize_textured_triangle(
         surface: &mut SoftwareSurface,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
         clip: ClipBounds,
         texture: &TextureImage,
     ) {
-        let area = edge(v0.pos, v1.pos, v2.pos);
+        let area = edge(v0.pos2(), v1.pos2(), v2.pos2());
         if area.abs() <= f32::EPSILON {
             return;
         }
@@ -2852,16 +2854,16 @@ mod tests {
             return;
         };
         let inv_area = 1.0 / area;
-        let edge0_includes_boundary = edge_includes_boundary(v1.pos, v2.pos, area);
-        let edge1_includes_boundary = edge_includes_boundary(v2.pos, v0.pos, area);
-        let edge2_includes_boundary = edge_includes_boundary(v0.pos, v1.pos, area);
+        let edge0_includes_boundary = edge_includes_boundary(v1.pos2(), v2.pos2(), area);
+        let edge1_includes_boundary = edge_includes_boundary(v2.pos2(), v0.pos2(), area);
+        let edge2_includes_boundary = edge_includes_boundary(v0.pos2(), v1.pos2(), area);
 
         for y in bounds.min_y..bounds.max_y {
             for x in bounds.min_x..bounds.max_x {
-                let pixel_center = egui::pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
-                let w0 = edge(v1.pos, v2.pos, pixel_center) * inv_area;
-                let w1 = edge(v2.pos, v0.pos, pixel_center) * inv_area;
-                let w2 = edge(v0.pos, v1.pos, pixel_center) * inv_area;
+                let pixel_center = pos2(usize_to_f32(x) + 0.5, usize_to_f32(y) + 0.5);
+                let w0 = edge(v1.pos2(), v2.pos2(), pixel_center) * inv_area;
+                let w1 = edge(v2.pos2(), v0.pos2(), pixel_center) * inv_area;
+                let w2 = edge(v0.pos2(), v1.pos2(), pixel_center) * inv_area;
                 if edge_covers_pixel(w0, edge0_includes_boundary)
                     && edge_covers_pixel(w1, edge1_includes_boundary)
                     && edge_covers_pixel(w2, edge2_includes_boundary)
@@ -2876,7 +2878,7 @@ mod tests {
     fn render_test_quad(
         width: usize,
         height: usize,
-        vertices: [egui::epaint::Vertex; 4],
+        vertices: [Vertex; 4],
         clip: ClipBounds,
     ) -> (bool, Vec<u8>) {
         let texture = TextureImage {
@@ -2904,7 +2906,7 @@ mod tests {
         (accepted, surface.pixels)
     }
 
-    fn quad_triangles(vertices: &[egui::epaint::Vertex; 4]) -> [&egui::epaint::Vertex; 6] {
+    fn quad_triangles(vertices: &[Vertex; 4]) -> [&Vertex; 6] {
         [
             &vertices[0],
             &vertices[1],
@@ -2918,7 +2920,7 @@ mod tests {
     fn render_test_quad_generic(
         width: usize,
         height: usize,
-        vertices: [egui::epaint::Vertex; 4],
+        vertices: [Vertex; 4],
         clip: ClipBounds,
     ) -> Vec<u8> {
         let texture = test_white_texture();
@@ -2947,7 +2949,7 @@ mod tests {
     fn render_test_textured_quad(
         width: usize,
         height: usize,
-        vertices: [egui::epaint::Vertex; 4],
+        vertices: [Vertex; 4],
         texture: &TextureImage,
         clip: ClipBounds,
     ) -> (bool, Vec<u8>) {
@@ -2974,7 +2976,7 @@ mod tests {
     fn render_test_textured_quad_generic(
         width: usize,
         height: usize,
-        vertices: [egui::epaint::Vertex; 4],
+        vertices: [Vertex; 4],
         texture: &TextureImage,
         clip: ClipBounds,
     ) -> Vec<u8> {
@@ -3012,9 +3014,9 @@ mod tests {
     fn render_test_triangle_generic(
         width: usize,
         height: usize,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
         texture: &TextureImage,
     ) -> Vec<u8> {
         let mut surface = test_surface(width, height);
@@ -3032,9 +3034,9 @@ mod tests {
 
     fn rasterize_test_textured_triangle(
         surface: &mut SoftwareSurface,
-        v0: &egui::epaint::Vertex,
-        v1: &egui::epaint::Vertex,
-        v2: &egui::epaint::Vertex,
+        v0: &Vertex,
+        v1: &Vertex,
+        v2: &Vertex,
         texture: &TextureImage,
         clip: ClipBounds,
     ) {
@@ -3043,7 +3045,7 @@ mod tests {
             TriangleVertices { v0, v1, v2 },
             texture,
             triangle_raster_bounds(v0, v1, v2, clip).expect("triangle bounds"),
-            edge(v0.pos, v1.pos, v2.pos),
+            edge(v0.pos2(), v1.pos2(), v2.pos2()),
             None,
         );
     }
@@ -3091,22 +3093,21 @@ mod tests {
         ]
     }
 
-    fn test_vertex(x: f32, y: f32) -> egui::epaint::Vertex {
-        egui::epaint::Vertex {
-            pos: egui::pos2(x, y),
-            color: egui::Color32::WHITE,
-            uv: egui::Pos2::ZERO,
+    fn test_vertex(x: f32, y: f32) -> Vertex {
+        Vertex {
+            pos: [x, y],
+            color: Color::WHITE,
+            uv: [0.0, 0.0],
         }
     }
 
-    fn solid_vertex(x: f32, y: f32, color: [u8; 4]) -> egui::epaint::Vertex {
+    fn solid_vertex(x: f32, y: f32, color: [u8; 4]) -> Vertex {
         let mut vertex = test_vertex(x, y);
-        vertex.color =
-            egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
+        vertex.color = Color::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
         vertex
     }
 
-    fn test_quad_vertices() -> [egui::epaint::Vertex; 4] {
+    fn test_quad_vertices() -> [Vertex; 4] {
         [
             test_vertex(1.0, 1.0),
             test_vertex(4.0, 1.0),
@@ -3121,7 +3122,7 @@ mod tests {
         max_x: f32,
         max_y: f32,
         color: [u8; 4],
-    ) -> [egui::epaint::Vertex; 4] {
+    ) -> [Vertex; 4] {
         let mut vertices = [
             test_vertex(min_x, min_y),
             test_vertex(max_x, min_y),
@@ -3129,8 +3130,7 @@ mod tests {
             test_vertex(max_x, max_y),
         ];
         for vertex in &mut vertices {
-            vertex.color =
-                egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
+            vertex.color = Color::from_rgba_premultiplied(color[0], color[1], color[2], color[3]);
         }
         vertices
     }
@@ -3141,16 +3141,16 @@ mod tests {
         max_x: f32,
         max_y: f32,
         color: [u8; 4],
-    ) -> [egui::epaint::Vertex; 4] {
+    ) -> [Vertex; 4] {
         let mut vertices = translucent_quad_vertices(min_x, min_y, max_x, max_y, color);
-        vertices[0].uv = egui::pos2(0.0, 0.0);
-        vertices[1].uv = egui::pos2(1.0, 0.0);
-        vertices[2].uv = egui::pos2(0.0, 1.0);
-        vertices[3].uv = egui::pos2(1.0, 1.0);
+        vertices[0].uv = [0.0, 0.0];
+        vertices[1].uv = [1.0, 0.0];
+        vertices[2].uv = [0.0, 1.0];
+        vertices[3].uv = [1.0, 1.0];
         vertices
     }
 
-    fn solid_fan_vertices(color: [u8; 4]) -> Vec<egui::epaint::Vertex> {
+    fn solid_fan_vertices(color: [u8; 4]) -> Vec<Vertex> {
         vec![
             solid_vertex(1.0, 5.0, color),
             solid_vertex(2.0, 1.0, color),
@@ -3161,7 +3161,7 @@ mod tests {
         ]
     }
 
-    fn test_solid_fan_polygon(vertices: &[egui::epaint::Vertex]) -> Vec<usize> {
+    fn test_solid_fan_polygon(vertices: &[Vertex]) -> Vec<usize> {
         let mut polygon: Vec<_> = (1..vertices.len()).collect();
         polygon.push(0);
         polygon
@@ -3169,7 +3169,7 @@ mod tests {
 
     fn rasterize_cached_test_fan(
         surface: &mut SoftwareSurface,
-        vertices: &[egui::epaint::Vertex],
+        vertices: &[Vertex],
         polygon: &[usize],
         clip: ClipBounds,
         color: [u8; 4],
@@ -3192,7 +3192,7 @@ mod tests {
     fn render_test_solid_fan(
         width: usize,
         height: usize,
-        vertices: &[egui::epaint::Vertex],
+        vertices: &[Vertex],
         texture: &TextureImage,
     ) -> Vec<u8> {
         let mut surface = test_surface(width, height);
@@ -3228,7 +3228,7 @@ mod tests {
     fn render_test_solid_fan_reference(
         width: usize,
         height: usize,
-        vertices: &[egui::epaint::Vertex],
+        vertices: &[Vertex],
         texture: &TextureImage,
     ) -> Vec<u8> {
         let mut surface = test_surface(width, height);
@@ -3244,9 +3244,7 @@ mod tests {
         surface.pixels
     }
 
-    fn solid_fan_test_triangles(
-        vertices: &[egui::epaint::Vertex],
-    ) -> Vec<[&egui::epaint::Vertex; 3]> {
+    fn solid_fan_test_triangles(vertices: &[Vertex]) -> Vec<[&Vertex; 3]> {
         (1..vertices.len() - 1)
             .map(|index| [&vertices[index], &vertices[0], &vertices[index + 1]])
             .collect()

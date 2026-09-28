@@ -239,8 +239,8 @@ fn alpha_blend(destination: &mut [u8], source: [u8; 4]) {
     }
 
     let inverse_alpha = u8::MAX - source[3];
-    // egui::Color32 stores premultiplied-alpha sRGBA. Do not multiply the
-    // source channels by alpha again here unless darker fringes around every
+    // Colors arrive premultiplied (see `Color`). Do not multiply the source
+    // channels by alpha again here unless darker fringes around every
     // translucent primitive sound like entertainment.
     destination[0] = blend_premultiplied_channel(source[0], destination[0], inverse_alpha);
     destination[1] = blend_premultiplied_channel(source[1], destination[1], inverse_alpha);

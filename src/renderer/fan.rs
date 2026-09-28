@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use crate::Vertex;
+use crate::geometry::{Pos2, RasterMesh};
 use std::io;
 
 use super::mesh_index_to_usize;
@@ -25,7 +27,7 @@ pub(super) struct SolidFanPolygonScratch<'a> {
 struct FanCandidate {
     center_slot: usize,
     center_index: u32,
-    center_pos: egui::Pos2,
+    center_pos: Pos2,
     center_vertex_index: usize,
     triangle_count: usize,
 }
@@ -46,12 +48,12 @@ impl FanCandidate {
 struct FanTriangle<'a> {
     indices: [u32; 3],
     vertex_indices: [usize; 3],
-    vertices: [&'a egui::epaint::Vertex; 3],
+    vertices: [&'a Vertex; 3],
 }
 
 struct CheapFanSeed<'a> {
     center_index: u32,
-    center_pos: egui::Pos2,
+    center_pos: Pos2,
     center_vertex_index: usize,
     previous_boundary: FanVertex<'a>,
     current_boundary: FanVertex<'a>,
@@ -61,7 +63,7 @@ struct CheapFanSeed<'a> {
 pub(super) const SOLID_FAN_MIN_TRIANGLES: usize = 4;
 
 pub(super) fn solid_fan_run<'a>(
-    mesh: &'a egui::Mesh,
+    mesh: RasterMesh<'a>,
     texture: &TextureImage,
     clip: ClipBounds,
     index_offset: usize,
@@ -115,7 +117,7 @@ pub(super) fn solid_fan_run<'a>(
 }
 
 fn solid_fan_second_triangle_center_mask(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     index_offset: usize,
     mut stats: Option<&mut SolidFanProbeStats>,
 ) -> io::Result<[bool; 3]> {
@@ -149,7 +151,7 @@ fn solid_fan_second_triangle_center_mask(
     let mut allowed = [false; 3];
     for (center_slot, allowed_slot) in allowed.iter_mut().enumerate() {
         let center_index = first.indices[center_slot];
-        let center_pos = first.vertices[center_slot].pos;
+        let center_pos = first.vertices[center_slot].pos2();
         let Some(second_center_slot) = candidate_center_slot(second, center_index, center_pos)
         else {
             continue;
@@ -178,7 +180,7 @@ fn record_preflight_slot_results(allowed: [bool; 3], stats: Option<&mut SolidFan
 }
 
 fn solid_fan_run_for_center(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     texture: &TextureImage,
     clip: ClipBounds,
     index_offset: usize,
@@ -208,7 +210,7 @@ fn solid_fan_run_for_center(
     }
     solid_fan_polygon(mesh, index_offset, candidate, polygon_scratch.polygon)?;
     polygon_scratch.polygon.push(candidate.center_vertex_index);
-    if !solid_fan_polygon_is_safe(&mesh.vertices, polygon_scratch.polygon) {
+    if !solid_fan_polygon_is_safe(mesh.vertices, polygon_scratch.polygon) {
         if let Some(stats) = stats.as_deref_mut() {
             stats.record_reject(SolidFanProbeRejectReason::UnsafePolygon);
         }
@@ -230,7 +232,7 @@ fn solid_fan_run_for_center(
 }
 
 fn cheap_solid_fan_candidate(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     index_offset: usize,
     center_slot: usize,
     seen_boundaries: &mut Vec<FanBoundaryKey>,
@@ -365,7 +367,7 @@ fn record_scratch_overflow(stats: Option<&mut SolidFanProbeStats>, triangle_coun
 }
 
 fn cheap_solid_fan_seed<'a>(
-    mesh: &'a egui::Mesh,
+    mesh: RasterMesh<'a>,
     index_offset: usize,
     center_slot: usize,
     mut stats: Option<&mut SolidFanProbeStats>,
@@ -394,7 +396,7 @@ fn cheap_solid_fan_seed<'a>(
     let [previous_boundary, current_boundary] = fan_boundaries(first, center_slot);
     Ok(Some(CheapFanSeed {
         center_index: first.indices[center_slot],
-        center_pos: first.vertices[center_slot].pos,
+        center_pos: first.vertices[center_slot].pos2(),
         center_vertex_index: first.vertex_indices[center_slot],
         previous_boundary,
         current_boundary,
@@ -428,7 +430,7 @@ fn fan_boundary_seen(
 }
 
 fn solid_fan_polygon(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     index_offset: usize,
     candidate: FanCandidate,
     polygon: &mut Vec<usize>,
@@ -464,7 +466,7 @@ fn solid_fan_polygon(
 }
 
 fn solid_fan_run_color(
-    mesh: &egui::Mesh,
+    mesh: RasterMesh<'_>,
     texture: &TextureImage,
     clip: ClipBounds,
     index_offset: usize,
@@ -491,7 +493,10 @@ fn solid_fan_run_color(
     Ok(color)
 }
 
-fn fan_triangle_at(mesh: &egui::Mesh, index_offset: usize) -> io::Result<Option<FanTriangle<'_>>> {
+fn fan_triangle_at(
+    mesh: RasterMesh<'_>,
+    index_offset: usize,
+) -> io::Result<Option<FanTriangle<'_>>> {
     let indices = [
         mesh.indices[index_offset],
         mesh.indices[index_offset + 1],
@@ -532,11 +537,11 @@ fn solid_fan_triangle_color(
 fn candidate_center_slot(
     triangle: FanTriangle<'_>,
     center_index: u32,
-    center_pos: egui::Pos2,
+    center_pos: Pos2,
 ) -> Option<usize> {
     (0..3).find(|slot| {
         triangle.indices[*slot] == center_index
-            && same_fan_pos(triangle.vertices[*slot].pos, center_pos)
+            && same_fan_pos(triangle.vertices[*slot].pos2(), center_pos)
     })
 }
 
@@ -578,14 +583,14 @@ fn fan_triangle_positions_are_finite(triangle: FanTriangle<'_>) -> bool {
     triangle
         .vertices
         .iter()
-        .all(|vertex| vertex.pos.x.is_finite() && vertex.pos.y.is_finite())
+        .all(|vertex| vertex.pos2().x.is_finite() && vertex.pos2().y.is_finite())
 }
 
 fn fan_triangle_area_sign(triangle: FanTriangle<'_>) -> Option<i8> {
     let [v0, v1, v2] = triangle.vertices;
-    let area = (v2.pos.x - v0.pos.x).mul_add(
-        v1.pos.y - v0.pos.y,
-        -((v2.pos.y - v0.pos.y) * (v1.pos.x - v0.pos.x)),
+    let area = (v2.pos2().x - v0.pos2().x).mul_add(
+        v1.pos2().y - v0.pos2().y,
+        -((v2.pos2().y - v0.pos2().y) * (v1.pos2().x - v0.pos2().x)),
     );
     if area.abs() <= f32::EPSILON {
         return None;
@@ -593,18 +598,18 @@ fn fan_triangle_area_sign(triangle: FanTriangle<'_>) -> Option<i8> {
     Some(if area.is_sign_positive() { 1 } else { -1 })
 }
 
-fn solid_fan_polygon_is_safe(vertices: &[egui::epaint::Vertex], polygon: &[usize]) -> bool {
+fn solid_fan_polygon_is_safe(vertices: &[Vertex], polygon: &[usize]) -> bool {
     polygon.len() >= SOLID_FAN_MIN_TRIANGLES + 2 && polygon_is_strictly_convex(vertices, polygon)
 }
 
-fn polygon_is_strictly_convex(vertices: &[egui::epaint::Vertex], polygon: &[usize]) -> bool {
+fn polygon_is_strictly_convex(vertices: &[Vertex], polygon: &[usize]) -> bool {
     let Some(expected_direction) = polygon_area_direction(vertices, polygon) else {
         return false;
     };
     for index in 0..polygon.len() {
-        let a = vertices[polygon[index]].pos;
-        let b = vertices[polygon[(index + 1) % polygon.len()]].pos;
-        let c = vertices[polygon[(index + 2) % polygon.len()]].pos;
+        let a = vertices[polygon[index]].pos2();
+        let b = vertices[polygon[(index + 1) % polygon.len()]].pos2();
+        let c = vertices[polygon[(index + 2) % polygon.len()]].pos2();
         let turn = fan_edge(a, b, c);
         if non_zero_float_direction(turn) != Some(expected_direction) {
             return false;
@@ -613,14 +618,11 @@ fn polygon_is_strictly_convex(vertices: &[egui::epaint::Vertex], polygon: &[usiz
     true
 }
 
-fn polygon_area_direction(
-    vertices: &[egui::epaint::Vertex],
-    polygon: &[usize],
-) -> Option<std::cmp::Ordering> {
+fn polygon_area_direction(vertices: &[Vertex], polygon: &[usize]) -> Option<std::cmp::Ordering> {
     let mut twice_area = 0.0;
     for index in 0..polygon.len() {
-        let a = vertices[polygon[index]].pos;
-        let b = vertices[polygon[(index + 1) % polygon.len()]].pos;
+        let a = vertices[polygon[index]].pos2();
+        let b = vertices[polygon[(index + 1) % polygon.len()]].pos2();
         twice_area += a.x.mul_add(b.y, -(a.y * b.x));
     }
     non_zero_float_direction(-twice_area)
@@ -636,21 +638,21 @@ fn non_zero_float_direction(value: f32) -> Option<std::cmp::Ordering> {
     }
 }
 
-fn fan_edge(a: egui::Pos2, b: egui::Pos2, c: egui::Pos2) -> f32 {
+fn fan_edge(a: Pos2, b: Pos2, c: Pos2) -> f32 {
     (c.x - a.x).mul_add(b.y - a.y, -((c.y - a.y) * (b.x - a.x)))
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct FanBoundaryKey {
     index: u32,
-    pos: egui::Pos2,
+    pos: Pos2,
 }
 
 impl From<FanVertex<'_>> for FanBoundaryKey {
     fn from(vertex: FanVertex<'_>) -> Self {
         Self {
             index: vertex.index,
-            pos: vertex.vertex.pos,
+            pos: vertex.vertex.pos2(),
         }
     }
 }
@@ -667,14 +669,14 @@ impl Eq for FanBoundaryKey {}
 struct FanVertex<'a> {
     index: u32,
     vertex_index: usize,
-    vertex: &'a egui::epaint::Vertex,
+    vertex: &'a Vertex,
 }
 
 fn same_fan_vertex(left: FanVertex<'_>, right: FanVertex<'_>) -> bool {
-    left.index == right.index && same_fan_pos(left.vertex.pos, right.vertex.pos)
+    left.index == right.index && same_fan_pos(left.vertex.pos2(), right.vertex.pos2())
 }
 
-fn same_fan_pos(left: egui::Pos2, right: egui::Pos2) -> bool {
+fn same_fan_pos(left: Pos2, right: Pos2) -> bool {
     matches!(
         left.x.partial_cmp(&right.x),
         Some(std::cmp::Ordering::Equal)
