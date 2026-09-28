@@ -39,8 +39,11 @@ pub(crate) enum TextureKey {
 }
 
 impl TextureId {
-    /// Issues the next process-wide handle, or `None` once all `u64` values are spent. It never
-    /// wraps, because a wrapped counter would hand out a handle that is already in use.
+    /// Issues the next process-wide handle, or `None` once the handle space is exhausted.
+    ///
+    /// Handles run from 0 through `u64::MAX - 1`. The counter parks at `u64::MAX`, which marks
+    /// exhaustion and is never issued. It never wraps, because a wrapped counter would hand out
+    /// a handle that is already in use.
     pub(crate) fn issue() -> Option<Self> {
         issue_from(&NEXT_TEXTURE_ID).map(Self)
     }

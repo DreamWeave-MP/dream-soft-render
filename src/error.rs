@@ -39,8 +39,8 @@ pub enum Error {
     },
     /// The texture handle was never created by this renderer, or has been freed.
     UnknownTexture(TextureId),
-    /// Every possible texture handle has been issued. Handles are never reused, so no more
-    /// textures can be created in this process.
+    /// The handle space is exhausted: every handle from 0 through `u64::MAX - 1` has been
+    /// issued. Handles are never reused, so no more textures can be created in this process.
     TextureIdsExhausted,
     /// A texture update region does not fit inside the texture.
     TextureUpdateOutOfBounds(TextureId),
