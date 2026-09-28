@@ -4,10 +4,12 @@ use std::io;
 use std::time::{Duration, Instant};
 
 mod fan;
+mod frame;
 mod quad;
 mod stats;
 
-use super::format_repaint_delay;
+pub use frame::{Frame, Mesh};
+
 use super::raster::{
     ClearElisionQuadRejection, ClipBounds, RasterStats, SolidFanRasterParams, SolidFanSpanCache,
     classify_triangle, clear_elision_quad_evidence, polygon_raster_bounds,
@@ -18,6 +20,7 @@ use super::render_benchmark::{
 };
 use super::surface::SoftwareSurface;
 use super::texture::{TextureDeltaStats, TextureImage, TextureStore};
+use crate::egui_adapter::format_repaint_delay;
 use fan::{
     FanBoundaryKey, SOLID_FAN_MIN_TRIANGLES, SolidFanPolygonScratch, SolidFanRun, solid_fan_run,
 };
@@ -26,7 +29,7 @@ use stats::{
     PrimitiveStats, RasterTimings, SolidFanRasterRecord, SolidFanRasterWork, TriangleSource,
 };
 
-/// Per-frame inputs and logging switches for [`SoftwareRenderer::render`].
+/// Per-frame inputs and logging switches for [`SoftwareRenderer::render_egui`].
 pub struct RenderFrame<'a> {
     /// The egui context the frame's UI runs in.
     pub context: &'a egui::Context,
@@ -54,7 +57,10 @@ impl RenderFrame<'_> {
     }
 }
 
-/// Rasterizes egui frames into an owned [`SoftwareSurface`].
+/// A CPU rasterizer that owns an RGBA8 [`SoftwareSurface`] and a texture store.
+///
+/// Draw with [`SoftwareRenderer::begin_frame`], or run egui frames through
+/// [`SoftwareRenderer::render_egui`] (see [`crate::egui_adapter`]). Both write the same surface.
 #[derive(Debug)]
 pub struct SoftwareRenderer {
     surface: SoftwareSurface,
@@ -66,6 +72,9 @@ pub struct SoftwareRenderer {
     // Primitives last rasterized into `surface`, valid only while `previous_frame_valid`.
     previous_primitives: Vec<egui::ClippedPrimitive>,
     previous_frame_valid: bool,
+    next_texture_id: u64,
+    // Reused conversion buffer for meshes drawn through `Frame`.
+    mesh_scratch: egui::Mesh,
 }
 
 const SOLID_FAN_POLYGON_SCRATCH_CAPACITY: usize = 4096;
@@ -81,18 +90,24 @@ impl Default for SoftwareRenderer {
             skip_unchanged_frames: true,
             previous_primitives: Vec::new(),
             previous_frame_valid: false,
+            next_texture_id: 0,
+            mesh_scratch: egui::Mesh::default(),
         }
     }
 }
 
 impl SoftwareRenderer {
-    /// Runs `run_ui` for one egui frame sized `width`x`height` and rasterizes the result.
+    /// Runs `run_ui` for one egui frame sized `width`x`height`, applies egui's texture
+    /// changes, tessellates the output, and rasterizes it into the surface.
+    ///
+    /// egui meshes can show textures made with [`SoftwareRenderer::create_texture`] through
+    /// [`crate::egui_adapter::egui_texture_id`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the surface cannot be sized, a texture delta is malformed,
-    /// or a mesh references out-of-range vertices or unknown textures.
-    pub fn render(
+    /// Returns an error if the surface cannot be sized, a texture delta is malformed, a mesh
+    /// references out-of-range vertices, or egui emits a paint callback.
+    pub fn render_egui(
         &mut self,
         width: usize,
         height: usize,
@@ -226,7 +241,7 @@ impl SoftwareRenderer {
         }
     }
 
-    /// Whether frames whose tessellated output is bit-identical to the previous frame, with no
+    /// Whether egui frames whose tessellated output is bit-identical to the previous frame, with no
     /// texture uploads, skip rasterization and keep the previous surface. Enabled by default.
     pub const fn set_skip_unchanged_frames(&mut self, skip: bool) {
         self.skip_unchanged_frames = skip;
@@ -247,7 +262,7 @@ impl SoftwareRenderer {
         let stage_start = log_timings.then(Instant::now);
         let surface_resized = self.surface.resize(width, height)?;
         if surface_resized {
-            self.surface.clear([17, 20, 28, 255]);
+            self.surface.clear(crate::Color::TRANSPARENT.to_array());
         }
         Ok((
             surface_resized,
@@ -583,7 +598,7 @@ impl ClearElisionFrameStats {
     }
 }
 
-/// What one [`SoftwareRenderer::render`] call produced.
+/// What one [`SoftwareRenderer::render_egui`] call produced.
 #[derive(Clone, Copy, Debug)]
 pub struct RenderOutcome {
     pub repaint_delay: Duration,

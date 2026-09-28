@@ -48,10 +48,10 @@ impl TriangleTexelSample {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ClipBounds {
-    pub(super) min_x: usize,
-    pub(super) min_y: usize,
-    pub(super) max_x: usize,
-    pub(super) max_y: usize,
+    pub(crate) min_x: usize,
+    pub(crate) min_y: usize,
+    pub(crate) max_x: usize,
+    pub(crate) max_y: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

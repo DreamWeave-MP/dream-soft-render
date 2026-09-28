@@ -2,8 +2,9 @@
 
 use std::io;
 
-// Covers 640x480 and 1280x720 handheld fbdev targets, while still rejecting surprise desktop-sized framebuffers.
-const MAX_RENDER_PIXELS: usize = 1280 * 720;
+/// The largest surface, in pixels (1280x720): enough for 640x480 and 1280x720 handheld
+/// framebuffers while rejecting accidental desktop-sized ones.
+pub const MAX_SURFACE_PIXELS: usize = 1280 * 720;
 const MAX_BLEND_PRODUCT: u16 = 255 * 255;
 const BLEND_LOOKUP_TABLE_SIDE: usize = 256;
 const BLEND_LOOKUP_TABLE_SIDE_U16: u16 = 256;
@@ -66,9 +67,9 @@ impl SoftwareSurface {
         let pixels = width
             .checked_mul(height)
             .ok_or_else(|| io::Error::other("software surface pixel count overflow"))?;
-        if pixels > MAX_RENDER_PIXELS {
+        if pixels > MAX_SURFACE_PIXELS {
             return Err(io::Error::other(format!(
-                "software surface pixel budget exceeded: {pixels} > {MAX_RENDER_PIXELS}"
+                "software surface pixel budget exceeded: {pixels} > {MAX_SURFACE_PIXELS}"
             )));
         }
         let bytes = pixels
@@ -546,7 +547,7 @@ mod tests {
 
         assert_eq!(surface.width, 1280);
         assert_eq!(surface.height, 720);
-        assert_eq!(surface.pixels.len(), MAX_RENDER_PIXELS * 4);
+        assert_eq!(surface.pixels.len(), MAX_SURFACE_PIXELS * 4);
     }
 
     #[test]
@@ -554,14 +555,14 @@ mod tests {
         let mut surface = SoftwareSurface::default();
 
         let error = surface
-            .resize(MAX_RENDER_PIXELS + 1, 1)
+            .resize(MAX_SURFACE_PIXELS + 1, 1)
             .expect_err("oversized surface");
 
         assert_eq!(
             error.to_string(),
             format!(
-                "software surface pixel budget exceeded: {} > {MAX_RENDER_PIXELS}",
-                MAX_RENDER_PIXELS + 1
+                "software surface pixel budget exceeded: {} > {MAX_SURFACE_PIXELS}",
+                MAX_SURFACE_PIXELS + 1
             )
         );
     }

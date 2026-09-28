@@ -1,9 +1,42 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::collections::HashMap;
+use std::fmt;
 use std::io;
 
-const MAX_TEXTURE_BYTES: usize = 8 * 1024 * 1024;
+use crate::Error;
+
+/// Total bytes of texture pixels one renderer may hold (8 MiB): egui's font atlas and
+/// textures together with those made by [`SoftwareRenderer::create_texture`](crate::SoftwareRenderer::create_texture).
+pub const MAX_TEXTURE_BYTES: usize = 8 * 1024 * 1024;
+
+/// A texture owned by a [`SoftwareRenderer`](crate::SoftwareRenderer), returned by
+/// [`create_texture`](crate::SoftwareRenderer::create_texture).
+///
+/// Handles are never reused within one renderer, so a freed handle stays invalid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TextureId(pub(crate) u64);
+
+impl TextureId {
+    /// egui meshes name renderer-created textures as `TextureId::User(n)`; egui itself only
+    /// uploads `Managed` textures, so the two never collide.
+    pub(crate) const fn to_egui(self) -> egui::TextureId {
+        egui::TextureId::User(self.0)
+    }
+}
+
+impl fmt::Display for TextureId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+/// Stands in for "no texture": zero-sized textures sample as opaque white.
+pub(crate) static EMPTY_TEXTURE: TextureImage = TextureImage {
+    width: 0,
+    height: 0,
+    pixels: Vec::new(),
+};
 
 #[derive(Debug, Default)]
 pub(crate) struct TextureStore {
@@ -54,6 +87,75 @@ impl TextureStore {
                 byte_len: metadata.byte_len,
                 partial: false,
             })
+        }
+    }
+
+    pub(crate) fn insert_native(
+        &mut self,
+        id: TextureId,
+        width: usize,
+        height: usize,
+        pixels: &[u8],
+    ) -> Result<(), Error> {
+        if width == 0 || height == 0 {
+            return Err(Error::TextureSize { width, height });
+        }
+        let expected = rgba8_byte_len(width, height).ok_or(Error::TextureSize { width, height })?;
+        check_pixel_data_length(expected, pixels)?;
+        let requested = self.bytes_used.saturating_add(expected);
+        if requested > MAX_TEXTURE_BYTES {
+            return Err(Error::TextureBudget {
+                requested,
+                budget: MAX_TEXTURE_BYTES,
+            });
+        }
+        self.textures.insert(
+            id.to_egui(),
+            TextureImage {
+                width,
+                height,
+                pixels: pixels.to_vec(),
+            },
+        );
+        self.bytes_used = requested;
+        Ok(())
+    }
+
+    pub(crate) fn update_native(
+        &mut self,
+        id: TextureId,
+        pos: [usize; 2],
+        size: [usize; 2],
+        pixels: &[u8],
+    ) -> Result<(), Error> {
+        let [width, height] = size;
+        let expected = rgba8_byte_len(width, height).ok_or(Error::TextureUpdateOutOfBounds(id))?;
+        check_pixel_data_length(expected, pixels)?;
+        let texture = self
+            .textures
+            .get_mut(&id.to_egui())
+            .ok_or(Error::UnknownTexture(id))?;
+        texture
+            .validate_update_bounds(pos, width, height)
+            .map_err(|_| Error::TextureUpdateOutOfBounds(id))?;
+        let row_bytes = width * 4;
+        for (row, source) in pixels
+            .chunks_exact(row_bytes.max(1))
+            .enumerate()
+            .take(height)
+        {
+            let destination = ((pos[1] + row) * texture.width + pos[0]) * 4;
+            texture.pixels[destination..destination + row_bytes].copy_from_slice(source);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn free_native(&mut self, id: TextureId) -> Result<(), Error> {
+        if self.textures.contains_key(&id.to_egui()) {
+            self.free(id.to_egui());
+            Ok(())
+        } else {
+            Err(Error::UnknownTexture(id))
         }
     }
 
@@ -193,6 +295,21 @@ impl TextureImage {
             ));
         }
         Ok(())
+    }
+}
+
+fn rgba8_byte_len(width: usize, height: usize) -> Option<usize> {
+    width.checked_mul(height)?.checked_mul(4)
+}
+
+fn check_pixel_data_length(expected: usize, pixels: &[u8]) -> Result<(), Error> {
+    if pixels.len() == expected {
+        Ok(())
+    } else {
+        Err(Error::PixelDataLength {
+            expected,
+            actual: pixels.len(),
+        })
     }
 }
 

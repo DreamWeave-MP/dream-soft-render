@@ -6,7 +6,8 @@
 //! floating window with a shadow, so the renderer sees realistic glyph quads,
 //! feathered edge triangles, rounded-corner fans, and translucent shadows.
 
-use dream_soft_render::{RenderFrame, RenderOutcome, SoftwareRenderer};
+use dream_soft_render::SoftwareRenderer;
+use dream_soft_render::egui_adapter::{RenderFrame, RenderOutcome};
 
 pub const WIDTH: usize = 640;
 pub const HEIGHT: usize = 480;
@@ -227,7 +228,7 @@ pub fn render_frame(
         synthetic_workload: None,
     };
     renderer
-        .render(WIDTH, HEIGHT, &frame, |ui| scene.ui(ui, state))
+        .render_egui(WIDTH, HEIGHT, &frame, |ui| scene.ui(ui, state))
         .expect("scene renders")
 }
 
@@ -251,7 +252,7 @@ pub fn stats_lines(
         synthetic_workload: None,
     };
     renderer
-        .render(WIDTH, HEIGHT, &frame, |ui| scene.ui(ui, state))
+        .render_egui(WIDTH, HEIGHT, &frame, |ui| scene.ui(ui, state))
         .expect("scene renders");
     lines.into_inner()
 }
