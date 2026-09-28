@@ -6,8 +6,11 @@
 /// been scaled by `a / 255`. Opaque colors are the same either way; for translucent ones, use
 /// [`Color::from_rgba_unmultiplied`] to convert straight-alpha input. A channel above `a` is
 /// allowed and blends additively, as in egui.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-#[repr(C)]
+///
+/// It is four bytes with four-byte alignment, so the rasterizer compares and moves a color as
+/// one 32-bit word.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C, align(4))]
 pub struct Color {
     /// Red, premultiplied.
     pub r: u8,
@@ -73,6 +76,22 @@ impl Color {
 
     pub(crate) const fn to_egui(self) -> egui::Color32 {
         egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
+    }
+}
+
+// Whole-word comparison: the uniform-color checks that pick every fast path run this per
+// vertex, and field-by-field comparison costs four compares where one will do.
+impl PartialEq for Color {
+    fn eq(&self, other: &Self) -> bool {
+        u32::from_ne_bytes(self.to_array()) == u32::from_ne_bytes(other.to_array())
+    }
+}
+
+impl Eq for Color {}
+
+impl std::hash::Hash for Color {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_packed().hash(state);
     }
 }
 
