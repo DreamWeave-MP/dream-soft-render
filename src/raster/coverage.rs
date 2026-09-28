@@ -166,6 +166,10 @@ pub(super) fn triangle_row_state_endpoints(search: TriangleRowStateSearch) -> Tr
 }
 
 fn triangle_row_state_first_covered_x(search: TriangleRowStateSearch) -> (Option<usize>, usize) {
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+    if !search.collect_stats && neon_row_scan::worth_it(search) {
+        return (neon_row_scan::first_covered_x(search), 0);
+    }
     let (step0, step1, step2) = search.x_steps;
     let (row_edge0, row_edge1, row_edge2) = search.row_start_edges;
     let mut probe_px = 0;
@@ -193,6 +197,10 @@ fn triangle_row_state_last_covered_x(search: TriangleRowStateSearch) -> (Option<
     if last_candidate_x < search.candidate_start_x {
         return (None, 0);
     }
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+    if !search.collect_stats && neon_row_scan::worth_it(search) {
+        return (neon_row_scan::last_covered_x(search), 0);
+    }
 
     let (step0, step1, step2) = search.x_steps;
     let (row_edge0, row_edge1, row_edge2) = search.row_start_edges;
@@ -212,6 +220,99 @@ fn triangle_row_state_last_covered_x(search: TriangleRowStateSearch) -> (Option<
         }
     }
     (None, probe_px)
+}
+
+/// The row scans four pixels per step. Each lane runs the scalar probe's operations in the
+/// same order (multiply, add, multiply, compare; nothing fused), so the first and last covered
+/// lanes are the pixels the one-at-a-time scans stop at.
+#[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+mod neon_row_scan {
+    use core::arch::aarch64::{
+        float32x4_t, uint32x4_t, vaddq_f32, vaddvq_u32, vandq_u32, vceqq_f32, vcgtq_f32,
+        vdupq_n_f32, vdupq_n_u32, vld1q_f32, vld1q_u32, vminq_f32, vmulq_f32, vorrq_u32,
+    };
+
+    use super::{PixelOffset, TriangleRowStateSearch};
+
+    const LANE_OFFSETS: [f32; 4] = [0.0, 1.0, 2.0, 3.0];
+    const LANE_BITS: [u32; 4] = [1, 2, 4, 8];
+
+    /// Bit `i` set when pixel `offset + i` of the row is covered.
+    fn covered_lanes(search: TriangleRowStateSearch, offset: usize) -> u32 {
+        let (row_edge0, row_edge1, row_edge2) = search.row_start_edges;
+        let (step0, step1, step2) = search.x_steps;
+        let includes = search.coverage.includes_boundary;
+        // SAFETY: only register arithmetic and loads from the two four-element constant arrays.
+        unsafe {
+            let offsets = vminq_f32(
+                vaddq_f32(
+                    vdupq_n_f32(PixelOffset::new(offset).raw()),
+                    vld1q_f32(LANE_OFFSETS.as_ptr()),
+                ),
+                vdupq_n_f32(f32::from(u16::MAX)),
+            );
+            let inv_area = vdupq_n_f32(search.coverage.inv_area);
+            let edge_covers = |row_edge: f32, step: f32, includes_boundary: bool| -> uint32x4_t {
+                let edge: float32x4_t =
+                    vaddq_f32(vdupq_n_f32(row_edge), vmulq_f32(vdupq_n_f32(step), offsets));
+                let weight = vmulq_f32(edge, inv_area);
+                let zero = vdupq_n_f32(0.0);
+                let on_edge = vandq_u32(
+                    vceqq_f32(weight, zero),
+                    vdupq_n_u32(if includes_boundary { u32::MAX } else { 0 }),
+                );
+                vorrq_u32(vcgtq_f32(weight, zero), on_edge)
+            };
+            let covered = vandq_u32(
+                vandq_u32(
+                    edge_covers(row_edge0, step0, includes.edge0),
+                    edge_covers(row_edge1, step1, includes.edge1),
+                ),
+                edge_covers(row_edge2, step2, includes.edge2),
+            );
+            vaddvq_u32(vandq_u32(covered, vld1q_u32(LANE_BITS.as_ptr())))
+        }
+    }
+
+    /// Short candidate rows (egui's feathered edges are mostly two or three pixels) usually
+    /// hit on their first probe, where one scalar probe is cheaper than a four-lane step.
+    pub(super) const fn worth_it(search: TriangleRowStateSearch) -> bool {
+        search
+            .candidate_end_x
+            .saturating_sub(search.candidate_start_x)
+            >= 8
+    }
+
+    const fn lane_mask(lanes: usize) -> u32 {
+        (1 << lanes) - 1
+    }
+
+    pub(super) fn first_covered_x(search: TriangleRowStateSearch) -> Option<usize> {
+        let mut x = search.candidate_start_x;
+        while x < search.candidate_end_x {
+            let lanes = (search.candidate_end_x - x).min(4);
+            let covered = covered_lanes(search, x - search.candidate_start_x) & lane_mask(lanes);
+            if covered != 0 {
+                return Some(x + covered.trailing_zeros() as usize);
+            }
+            x += 4;
+        }
+        None
+    }
+
+    pub(super) fn last_covered_x(search: TriangleRowStateSearch) -> Option<usize> {
+        let mut end = search.candidate_end_x;
+        while end > search.candidate_start_x {
+            let start = end.saturating_sub(4).max(search.candidate_start_x);
+            let covered =
+                covered_lanes(search, start - search.candidate_start_x) & lane_mask(end - start);
+            if covered != 0 {
+                return Some(start + (u32::BITS - 1 - covered.leading_zeros()) as usize);
+            }
+            end = start;
+        }
+        None
+    }
 }
 
 fn triangle_row_state_covers_pixel(
@@ -426,4 +527,69 @@ pub(super) fn triangle_scanline_x_range(
         return (bounds.min_x, bounds.max_x);
     }
     (start_x, end_x)
+}
+
+#[cfg(all(test, target_arch = "aarch64", target_endian = "little"))]
+mod neon_row_scan_tests {
+    use super::*;
+    use crate::geometry::pos2;
+
+    #[test]
+    fn neon_row_scans_match_scalar_scans() {
+        let mut state = 0x9e37_79b9_u32;
+        let mut unit = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            f32::from(u16::try_from(state >> 16).unwrap_or(0)) / 65_535.0
+        };
+        let mut rows = 0;
+        for case in 0..20_000_u32 {
+            let (scale_x, scale_y) = if case % 2 == 0 {
+                (400.0, 3.0)
+            } else {
+                (120.0, 90.0)
+            };
+            let mut point = || pos2(unit() * scale_x, unit() * scale_y);
+            let (a, b, c) = (point(), point(), point());
+            let area = edge(a, b, c);
+            if area == 0.0 || !area.is_finite() {
+                continue;
+            }
+            let coverage = TriangleCoverage {
+                inv_area: 1.0 / area,
+                includes_boundary: TriangleBoundaryIncludes {
+                    edge0: unit() < 0.5,
+                    edge1: unit() < 0.5,
+                    edge2: unit() < 0.5,
+                },
+            };
+            // Some rows start past u16::MAX, where offsets clamp.
+            let start_x = if case % 11 == 0 { 65_530 } else { 0 };
+            let end_x = start_x + 1 + usize::try_from(case % 61).unwrap_or(0);
+            for y in 0..4 {
+                let pixel = pos2(0.5, usize_to_f32(y) + 0.5);
+                let search = |collect_stats| TriangleRowStateSearch {
+                    coverage,
+                    row_start_edges: (edge(b, c, pixel), edge(c, a, pixel), edge(a, b, pixel)),
+                    x_steps: (edge_step_x(b, c), edge_step_x(c, a), edge_step_x(a, b)),
+                    candidate_start_x: start_x,
+                    candidate_end_x: end_x,
+                    collect_stats,
+                };
+                assert_eq!(
+                    triangle_row_state_first_covered_x(search(false)).0,
+                    triangle_row_state_first_covered_x(search(true)).0,
+                    "first a={a:?} b={b:?} c={c:?} y={y} start={start_x} end={end_x}"
+                );
+                assert_eq!(
+                    triangle_row_state_last_covered_x(search(false)).0,
+                    triangle_row_state_last_covered_x(search(true)).0,
+                    "last a={a:?} b={b:?} c={c:?} y={y} start={start_x} end={end_x}"
+                );
+                rows += 1;
+            }
+        }
+        assert!(rows > 50_000);
+    }
 }
