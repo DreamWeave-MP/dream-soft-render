@@ -2,8 +2,8 @@
 
 use super::TriangleVertices;
 use super::math::{
-    edge, edge_covers_pixel, edge_step_x, f32_to_usize_ceil_clamped, f32_to_usize_floor_clamped,
-    same_f32, usize_to_f32,
+    PixelOffset, edge, edge_covers_pixel, edge_step_x, f32_to_usize_ceil_clamped,
+    f32_to_usize_floor_clamped, same_f32, usize_to_f32,
 };
 use super::types::TriangleRasterBounds;
 use crate::geometry::{Pos2, pos2};
@@ -169,11 +169,13 @@ fn triangle_row_state_first_covered_x(search: TriangleRowStateSearch) -> (Option
     let (step0, step1, step2) = search.x_steps;
     let (row_edge0, row_edge1, row_edge2) = search.row_start_edges;
     let mut probe_px = 0;
+    let mut offset = PixelOffset::new(0);
     for x in search.candidate_start_x..search.candidate_end_x {
         if search.collect_stats {
             probe_px += 1;
         }
-        let dx = usize_to_f32(x - search.candidate_start_x);
+        let dx = offset.get();
+        offset.advance();
         let edge0 = row_edge0 + step0 * dx;
         let edge1 = row_edge1 + step1 * dx;
         let edge2 = row_edge2 + step2 * dx;
@@ -195,11 +197,13 @@ fn triangle_row_state_last_covered_x(search: TriangleRowStateSearch) -> (Option<
     let (step0, step1, step2) = search.x_steps;
     let (row_edge0, row_edge1, row_edge2) = search.row_start_edges;
     let mut probe_px = 0;
+    let mut offset = PixelOffset::new(last_candidate_x - search.candidate_start_x);
     for x in (search.candidate_start_x..search.candidate_end_x).rev() {
         if search.collect_stats {
             probe_px += 1;
         }
-        let dx = usize_to_f32(x - search.candidate_start_x);
+        let dx = offset.get();
+        offset.retreat();
         let edge0 = row_edge0 + step0 * dx;
         let edge1 = row_edge1 + step1 * dx;
         let edge2 = row_edge2 + step2 * dx;

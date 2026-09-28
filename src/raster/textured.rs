@@ -9,7 +9,7 @@ use super::coverage::{
     triangle_row_state_endpoints, triangle_scanline_x_range,
 };
 use super::math::{
-    edge, edge_covers_pixel, edge_includes_boundary, edge_step_x, edge_step_y,
+    PixelOffset, edge, edge_covers_pixel, edge_includes_boundary, edge_step_x, edge_step_y,
     f32_to_u8_round_clamped, interpolate_channel_value, interpolate_color, modulate_color,
 };
 use super::sampling::sample_nearest;
@@ -751,28 +751,8 @@ fn emit_white_constant_texel_variable_color_constant_alpha_run_no_stats(
     run: WhiteConstantTexelRun,
     alpha: u8,
 ) {
-    match alpha {
-        0 => {}
-        u8::MAX => {
-            let mut pixel_offset = run.pixel_offset;
-            for run_dx in 0..run.len {
-                let dx = run.start_dx + run_dx;
-                let color =
-                    white_constant_texel_pixel_color_with_alpha(row_color, color_step, dx, alpha);
-                surface.write_opaque_pixel_at_offset(pixel_offset, color);
-                pixel_offset += 4;
-            }
-        }
-        _ => {
-            let mut pixel_offset = run.pixel_offset;
-            for run_dx in 0..run.len {
-                let dx = run.start_dx + run_dx;
-                let color =
-                    white_constant_texel_pixel_color_with_alpha(row_color, color_step, dx, alpha);
-                surface.blend_translucent_pixel_at_offset(pixel_offset, color);
-                pixel_offset += 4;
-            }
-        }
+    if alpha != 0 {
+        emit_white_gradient_run(surface, row_color, color_step, run, Some(alpha));
     }
 }
 
@@ -782,25 +762,169 @@ fn emit_white_constant_texel_variable_alpha_run_no_stats(
     color_step: [f32; 4],
     run: WhiteConstantTexelRun,
 ) {
+    emit_white_gradient_run(surface, row_color, color_step, run, None);
+}
+
+/// Blends a run whose color changes along the row, four pixels at a time where the vector
+/// kernel is available, otherwise one at a time. `constant_alpha` replaces the per-pixel alpha
+/// when the caller has shown it is the same across the run.
+fn emit_white_gradient_run(
+    surface: &mut SoftwareSurface,
+    row_color: [f32; 4],
+    color_step: [f32; 4],
+    run: WhiteConstantTexelRun,
+    constant_alpha: Option<u8>,
+) {
     let mut pixel_offset = run.pixel_offset;
-    for run_dx in 0..run.len {
-        let dx = run.start_dx + run_dx;
-        let alpha = white_constant_texel_pixel_alpha(row_color, color_step, dx);
-        match alpha {
+    let mut dx = PixelOffset::new(run.start_dx);
+    let mut remaining = run.len;
+    while remaining > 0 {
+        let block = u8::try_from(remaining.min(4)).unwrap_or(4);
+        if blend_white_gradient_rgba4_neon(
+            surface,
+            pixel_offset,
+            block,
+            WhiteGradient {
+                row_color,
+                color_step,
+                dx,
+                constant_alpha,
+            },
+        ) {
+            pixel_offset += usize::from(block) * 4;
+            dx.advance_by(block);
+            remaining -= usize::from(block);
+            continue;
+        }
+        let mut color = white_constant_texel_pixel_rgba(row_color, color_step, dx.get());
+        if let Some(alpha) = constant_alpha {
+            color[3] = alpha;
+        }
+        match color[3] {
             0 => {}
-            u8::MAX => {
-                let color =
-                    white_constant_texel_pixel_color_with_alpha(row_color, color_step, dx, alpha);
-                surface.write_opaque_pixel_at_offset(pixel_offset, color);
-            }
-            _ => {
-                let color =
-                    white_constant_texel_pixel_color_with_alpha(row_color, color_step, dx, alpha);
-                surface.blend_translucent_pixel_at_offset(pixel_offset, color);
-            }
+            u8::MAX => surface.write_opaque_pixel_at_offset(pixel_offset, color),
+            _ => surface.blend_translucent_pixel_at_offset(pixel_offset, color),
         }
         pixel_offset += 4;
+        dx.advance();
+        remaining -= 1;
     }
+}
+
+// Only the NEON kernel reads these; other targets take the scalar path.
+#[cfg_attr(
+    not(all(target_arch = "aarch64", target_endian = "little")),
+    allow(dead_code)
+)]
+#[derive(Clone, Copy)]
+struct WhiteGradient {
+    row_color: [f32; 4],
+    color_step: [f32; 4],
+    dx: PixelOffset,
+    constant_alpha: Option<u8>,
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_endian = "little")))]
+const fn blend_white_gradient_rgba4_neon(
+    _surface: &mut SoftwareSurface,
+    _pixel_offset: usize,
+    _pixels: u8,
+    _gradient: WhiteGradient,
+) -> bool {
+    false
+}
+
+/// Blends `pixels` (1 to 4) gradient pixels as one interleaved 16-byte RGBA vector, returning
+/// false (having written nothing) when a 16-byte access would leave the surface.
+///
+/// Per lane this is the scalar path exactly: offsets clamp like `usize_to_f32`, each channel
+/// is `round(step * dx + row)` with a fused multiply-add, ties away from zero, saturated to a
+/// byte; then premultiplied source-over with alpha forced to 255, and alpha-0 pixels keep the
+/// destination. Lanes past `pixels` are zeroed, so they are transparent and write back what
+/// they read.
+#[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+fn blend_white_gradient_rgba4_neon(
+    surface: &mut SoftwareSurface,
+    pixel_offset: usize,
+    pixels: u8,
+    gradient: WhiteGradient,
+) -> bool {
+    use core::arch::aarch64::{
+        uint8x8_t, uint16x8_t, vaddq_f32, vaddq_u16, vandq_u8, vbslq_u8, vceqq_u8, vcltq_u8,
+        vcombine_u8, vcombine_u16, vcvtq_u32_f32, vdup_n_u8, vdup_n_u16, vdupq_n_f32, vdupq_n_u8,
+        vdupq_n_u16, vfmaq_f32, vget_low_u8, vld1q_f32, vld1q_u8, vminq_f32, vmovn_u16,
+        vmull_high_u8, vmull_u8, vmvnq_u8, vorrq_u8, vqaddq_u8, vqmovn_u16, vqmovn_u32, vqtbl1q_u8,
+        vreinterpret_u8_u16, vreinterpret_u16_u8, vrndaq_f32, vshrq_n_u16, vst1q_u8, vzip1_u8,
+        vzip1_u16, vzip2_u16,
+    };
+
+    const LANE_OFFSETS: [f32; 4] = [0.0, 1.0, 2.0, 3.0];
+    const BYTE_INDEX: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const ALPHA_BROADCAST: [u8; 16] = [3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15];
+    const ALPHA_BYTES: [u8; 16] = [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255];
+
+    unsafe fn divide_product(product: uint16x8_t) -> uint8x8_t {
+        let biased = unsafe { vaddq_u16(product, vdupq_n_u16(128)) };
+        let correction = unsafe { vshrq_n_u16(biased, 8) };
+        let quotient = unsafe { vshrq_n_u16(vaddq_u16(biased, correction), 8) };
+        unsafe { vmovn_u16(quotient) }
+    }
+
+    debug_assert!((1..=4).contains(&pixels));
+    let Some(destination_bytes) = surface.pixels.get_mut(pixel_offset..pixel_offset + 16) else {
+        return false;
+    };
+    let WhiteGradient {
+        row_color,
+        color_step,
+        dx,
+        constant_alpha,
+    } = gradient;
+    // SAFETY: the destination slice is exactly 16 bytes and every load and store below stays
+    // inside it; the constant tables are 16-byte (or four-f32) arrays.
+    unsafe {
+        let offsets = vminq_f32(
+            vaddq_f32(vdupq_n_f32(dx.raw()), vld1q_f32(LANE_OFFSETS.as_ptr())),
+            vdupq_n_f32(f32::from(u16::MAX)),
+        );
+        let channel = |index: usize| -> uint8x8_t {
+            let value = vfmaq_f32(
+                vdupq_n_f32(row_color[index]),
+                vdupq_n_f32(color_step[index]),
+                offsets,
+            );
+            let words = vcvtq_u32_f32(vrndaq_f32(value));
+            vqmovn_u16(vcombine_u16(vqmovn_u32(words), vdup_n_u16(0)))
+        };
+        let (red, green, blue) = (channel(0), channel(1), channel(2));
+        let alpha = constant_alpha.map_or_else(|| channel(3), |alpha| vdup_n_u8(alpha));
+        let red_green = vreinterpret_u16_u8(vzip1_u8(red, green));
+        let blue_alpha = vreinterpret_u16_u8(vzip1_u8(blue, alpha));
+        let source = vcombine_u8(
+            vreinterpret_u8_u16(vzip1_u16(red_green, blue_alpha)),
+            vreinterpret_u8_u16(vzip2_u16(red_green, blue_alpha)),
+        );
+        let live = vcltq_u8(vld1q_u8(BYTE_INDEX.as_ptr()), vdupq_n_u8(pixels * 4));
+        let source = vandq_u8(source, live);
+
+        let source_alpha = vqtbl1q_u8(source, vld1q_u8(ALPHA_BROADCAST.as_ptr()));
+        let inverse_alpha = vmvnq_u8(source_alpha);
+        let destination = vld1q_u8(destination_bytes.as_ptr());
+        let blend = vcombine_u8(
+            divide_product(vmull_u8(
+                vget_low_u8(destination),
+                vget_low_u8(inverse_alpha),
+            )),
+            divide_product(vmull_high_u8(destination, inverse_alpha)),
+        );
+        let blended = vorrq_u8(vqaddq_u8(source, blend), vld1q_u8(ALPHA_BYTES.as_ptr()));
+        let transparent = vceqq_u8(source_alpha, vdupq_n_u8(0));
+        vst1q_u8(
+            destination_bytes.as_mut_ptr(),
+            vbslq_u8(transparent, destination, blended),
+        );
+    }
+    true
 }
 
 fn emit_white_constant_texel_run_with_stats(
@@ -1245,6 +1369,17 @@ fn white_constant_texel_pixel_color_with_alpha(
     ]
 }
 
+/// All four channels at a pixel offset: the same per-channel `round(step * dx + row)` as
+/// [`white_constant_texel_pixel_color_with_alpha`], from one shared offset, in a loop the
+/// compiler can run as one four-lane vector operation.
+fn white_constant_texel_pixel_rgba(row_color: [f32; 4], color_step: [f32; 4], dx: f32) -> [u8; 4] {
+    let mut rgba = [0; 4];
+    for ((channel, step), row) in rgba.iter_mut().zip(color_step).zip(row_color) {
+        *channel = f32_to_u8_round_clamped(step.mul_add(dx, row));
+    }
+    rgba
+}
+
 fn white_constant_texel_pixel_alpha(row_color: [f32; 4], color_step: [f32; 4], dx: usize) -> u8 {
     f32_to_u8_round_clamped(color_step[3].mul_add(usize_to_f32(dx), row_color[3]))
 }
@@ -1376,6 +1511,79 @@ fn interpolate_constant_texel_vertex_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+    #[test]
+    fn white_gradient_neon_blocks_match_scalar_pixels() {
+        let mut state = 0x2545_f491_u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        let mut unit = move || f32::from(u16::try_from(next() >> 16).unwrap_or(0)) / 65_535.0;
+        for case in 0..20_000_u32 {
+            let pixels = u8::try_from(1 + case % 4).unwrap_or(1);
+            // Mostly in-range colors, with some that overshoot or undershoot 0..=255.
+            let row_color = [0; 4].map(|_: u8| unit() * 300.0 - 20.0);
+            let color_step = [0; 4].map(|_: u8| unit() * 40.0 - 20.0);
+            let start_dx = if case % 7 == 0 {
+                65_533 + (case as usize % 5)
+            } else {
+                case as usize % 400
+            };
+            let constant_alpha = match case % 5 {
+                0 => Some(255),
+                1 => Some(u8::try_from(1 + case % 254).unwrap_or(1)),
+                _ => None,
+            };
+            let destination: Vec<u8> = (0..16)
+                .map(|_| u8::try_from(next() >> 24).unwrap_or(0))
+                .collect();
+            let gradient = WhiteGradient {
+                row_color,
+                color_step,
+                dx: PixelOffset::new(start_dx),
+                constant_alpha,
+            };
+
+            let mut actual = SoftwareSurface {
+                width: 4,
+                height: 1,
+                pixels: destination.clone(),
+            };
+            assert!(blend_white_gradient_rgba4_neon(
+                &mut actual,
+                0,
+                pixels,
+                gradient
+            ));
+
+            let mut expected = SoftwareSurface {
+                width: 4,
+                height: 1,
+                pixels: destination,
+            };
+            let mut dx = PixelOffset::new(start_dx);
+            for pixel in 0..usize::from(pixels) {
+                let mut color = white_constant_texel_pixel_rgba(row_color, color_step, dx.get());
+                if let Some(alpha) = constant_alpha {
+                    color[3] = alpha;
+                }
+                match color[3] {
+                    0 => {}
+                    u8::MAX => expected.write_opaque_pixel_at_offset(pixel * 4, color),
+                    _ => expected.blend_translucent_pixel_at_offset(pixel * 4, color),
+                }
+                dx.advance();
+            }
+            assert_eq!(
+                actual.pixels, expected.pixels,
+                "case={case} pixels={pixels} row={row_color:?} step={color_step:?} dx={start_dx}"
+            );
+        }
+    }
     use crate::Color;
     use crate::geometry::Pos2;
     use crate::raster::math::{f32_to_usize_ceil_clamped, f32_to_usize_floor_clamped};

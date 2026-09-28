@@ -55,18 +55,55 @@ fn f32_to_usize_saturating(value: f32) -> usize {
     value as usize
 }
 
-pub(super) fn f32_to_u8_round_clamped(value: f32) -> u8 {
-    let value = value.round().clamp(0.0, 255.0);
-    f32_to_u8_bounded(value)
-}
-
+/// Rounds to the nearest `u8`, ties away from zero, clamping to `0..=255` (NaN becomes 0).
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "value is rounded and clamped to the u8 range before casting"
+    reason = "float to int casts saturate, so the cast is the clamp: NaN and negatives give 0"
 )]
-fn f32_to_u8_bounded(value: f32) -> u8 {
-    value as u8
+pub(super) fn f32_to_u8_round_clamped(value: f32) -> u8 {
+    value.round() as u8
+}
+
+/// A pixel offset within a row as the f32 that `usize_to_f32` would give, stepped by one each
+/// pixel instead of converted each time. The counter holds the exact, unclamped offset: offsets
+/// are bounded by the surface width, far below 2^24, where every integer is an exact f32. `get`
+/// then applies `usize_to_f32`'s u16 clamp, so stepping in either direction stays exact.
+#[derive(Clone, Copy)]
+pub(super) struct PixelOffset(f32);
+
+impl PixelOffset {
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "offsets are below 2^24, where every integer is an exact f32"
+    )]
+    pub(super) fn new(offset: usize) -> Self {
+        debug_assert!(offset < 1 << 24);
+        Self(offset as f32)
+    }
+
+    pub(super) fn get(self) -> f32 {
+        self.0.min(f32::from(u16::MAX))
+    }
+
+    pub(super) fn advance(&mut self) {
+        self.0 += 1.0;
+    }
+
+    pub(super) fn retreat(&mut self) {
+        self.0 -= 1.0;
+    }
+
+    /// Moves forward `pixels` (at most a few) at once.
+    pub(super) fn advance_by(&mut self, pixels: u8) {
+        self.0 += f32::from(pixels);
+    }
+
+    /// The exact, unclamped offset, for vector code that clamps per lane.
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+    pub(super) const fn raw(self) -> f32 {
+        self.0
+    }
 }
 
 pub(super) fn edge(a: Pos2, b: Pos2, c: Pos2) -> f32 {
