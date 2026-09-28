@@ -8,6 +8,7 @@
 //! the renderer's deep-stat log lines, and `--scene NAME` to run one scene, and `--settle N` to shorten warm-up (for tracing).
 //! Under `cargo test` (the `--test`-less bench harness call) it renders one frame per scene.
 
+#[allow(dead_code, reason = "shared with the golden tests, which use the rest")]
 mod scenes;
 
 use std::path::PathBuf;
@@ -33,7 +34,7 @@ fn main() {
                 frames = args
                     .next()
                     .and_then(|v| v.parse().ok())
-                    .expect("--frames N")
+                    .expect("--frames N");
             }
             "--dump" => dump = Some(PathBuf::from(args.next().expect("--dump DIR"))),
             "--hash" => print_hash = true,
@@ -62,13 +63,13 @@ fn main() {
         for _ in 0..frames {
             let start = Instant::now();
             let outcome = render_frame(&mut renderer, &context, scene, &mut state, true);
-            total.push(start.elapsed().as_secs_f64() * 1e6);
-            rasterize.push(outcome.timings.map_or(0, |timings| timings.rasterize) as f64);
+            total.push(start.elapsed().as_micros());
+            rasterize.push(outcome.timings.map_or(0, |timings| timings.rasterize));
         }
         let (r50, r10, r90) = percentiles(&mut rasterize);
         let (t50, _, _) = percentiles(&mut total);
         println!(
-            "{:<8} rasterize_us p50={r50:>7.0} p10={r10:>7.0} p90={r90:>7.0}   render_us p50={t50:>7.0}   primitives={}",
+            "{:<8} rasterize_us p50={r50:>7} p10={r10:>7} p90={r90:>7}   render_us p50={t50:>7}   primitives={}",
             scene.name(),
             render_frame(&mut renderer, &context, scene, &mut state, false).primitive_count,
         );
@@ -95,8 +96,9 @@ fn main() {
     }
 }
 
-fn percentiles(samples: &mut [f64]) -> (f64, f64, f64) {
-    samples.sort_by(f64::total_cmp);
-    let at = |q: f64| samples[((samples.len() - 1) as f64 * q).round() as usize];
-    (at(0.5), at(0.1), at(0.9))
+/// p50, p10, and p90 of the samples, in microseconds.
+fn percentiles(samples: &mut [u128]) -> (u128, u128, u128) {
+    samples.sort_unstable();
+    let at = |tenths: usize| samples[(samples.len() - 1) * tenths / 10];
+    (at(5), at(1), at(9))
 }

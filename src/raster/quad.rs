@@ -1062,14 +1062,8 @@ fn rasterize_separable_uv_textured_rect_with_stats_white(
                 }
             }
             while x < scalar_end {
-                let color = separable_row_texel(
-                    texture,
-                    texture_row_offset,
-                    row,
-                    x,
-                    range.start_x,
-                    contiguous_texel_x,
-                );
+                let color =
+                    separable_uv_texel_color(texture, texture_row_offset, row, x, range.start_x);
                 stats.record_textured_rect_separable_direct_alpha_px(color[3], 1);
                 stats.record_alpha_px(color[3], 1);
                 match color[3] {
@@ -1179,14 +1173,8 @@ fn rasterize_separable_uv_textured_rect_with_stats_modulated(
                 }
             }
             while x < scalar_end {
-                let texel = separable_row_texel(
-                    texture,
-                    texture_row_offset,
-                    row,
-                    x,
-                    range.start_x,
-                    contiguous_texel_x,
-                );
+                let texel =
+                    separable_uv_texel_color(texture, texture_row_offset, row, x, range.start_x);
                 rasterize_sampled_textured_rect_modulated_scalar_pixel_with_stats(
                     surface,
                     pixel_offset,

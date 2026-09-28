@@ -120,21 +120,25 @@ fn form_ui(ui: &mut egui::Ui, state: &mut SceneState) {
 }
 
 fn preview_text() -> String {
+    use std::fmt::Write as _;
+
     let mut text = String::new();
     for index in 0..48 {
-        match index % 6 {
-            0 => text.push_str("data=\"/storage/roms/ports/morrowind/Data Files\"\n"),
-            1 => text.push_str(&format!("content=Mod{index:02}_Patch_For_Purists.esp\n")),
-            2 => text.push_str(&format!(
-                "fallback=Weather_Clear_Sky_Sunrise_Color,{},{},{}\n",
+        let written = match index % 6 {
+            0 => writeln!(text, "data=\"/storage/roms/ports/morrowind/Data Files\""),
+            1 => writeln!(text, "content=Mod{index:02}_Patch_For_Purists.esp"),
+            2 => writeln!(
+                text,
+                "fallback=Weather_Clear_Sky_Sunrise_Color,{},{},{}",
                 index * 3,
                 index * 5,
                 index * 7
-            )),
-            3 => text.push_str("fallback-archive=Tribunal.bsa\n"),
-            4 => text.push_str("# comment preserved from the source cfg\n"),
-            _ => text.push_str(&format!("fallback=Water_Map_Alpha,{index}\n")),
-        }
+            ),
+            3 => writeln!(text, "fallback-archive=Tribunal.bsa"),
+            4 => writeln!(text, "# comment preserved from the source cfg"),
+            _ => writeln!(text, "fallback=Water_Map_Alpha,{index}"),
+        };
+        written.expect("writing to a String cannot fail");
     }
     text
 }

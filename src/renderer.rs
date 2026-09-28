@@ -146,11 +146,8 @@ impl SoftwareRenderer {
         );
 
         let stage_start = log_timings.then(Instant::now);
-        let unchanged = self.skip_unchanged_frames
-            && self.previous_frame_valid
-            && !surface_resized
-            && output.textures_delta.set.is_empty()
-            && same_primitives(&self.previous_primitives, &primitives);
+        let unchanged =
+            self.frame_is_unchanged(surface_resized, &output.textures_delta, &primitives);
         let collect_stats = !unchanged && should_collect_deep_stats(frame.log_render_stats);
         let mut primitive_stats = collect_stats.then(PrimitiveStats::default);
         let mut raster_stats = collect_stats.then(RasterStats::default);
@@ -184,14 +181,7 @@ impl SoftwareRenderer {
             self.textures.free(id);
         }
         let texture_free_elapsed = elapsed_micros(stage_start);
-        let texture_evidence = TextureEvidence {
-            count: self.textures.len(),
-            bytes: self.textures.bytes_used(),
-            set_count: texture_delta_stats.set_count,
-            set_bytes: texture_delta_stats.set_bytes,
-            full_upload_count: texture_delta_stats.full_upload_count,
-            partial_update_count: texture_delta_stats.partial_update_count,
-        };
+        let texture_evidence = self.texture_evidence(&texture_delta_stats);
         let total_elapsed = elapsed_micros(total_start);
         let timings = log_timings.then_some(RenderTimings {
             resize_clear: resize_clear_elapsed,
@@ -210,6 +200,30 @@ impl SoftwareRenderer {
             texture_evidence,
             surface_changed: !unchanged,
         })
+    }
+
+    fn frame_is_unchanged(
+        &self,
+        surface_resized: bool,
+        textures_delta: &egui::TexturesDelta,
+        primitives: &[egui::ClippedPrimitive],
+    ) -> bool {
+        self.skip_unchanged_frames
+            && self.previous_frame_valid
+            && !surface_resized
+            && textures_delta.set.is_empty()
+            && same_primitives(&self.previous_primitives, primitives)
+    }
+
+    fn texture_evidence(&self, delta: &TextureDeltaStats) -> TextureEvidence {
+        TextureEvidence {
+            count: self.textures.len(),
+            bytes: self.textures.bytes_used(),
+            set_count: delta.set_count,
+            set_bytes: delta.set_bytes,
+            full_upload_count: delta.full_upload_count,
+            partial_update_count: delta.partial_update_count,
+        }
     }
 
     /// Whether frames whose tessellated output is bit-identical to the previous frame, with no
