@@ -19,6 +19,12 @@ pub(super) fn f32_to_usize_round_clamped(value: f32, max: usize) -> usize {
 }
 
 fn f32_to_usize_threshold_clamped(value: f32, max: usize) -> usize {
+    // For max <= u16::MAX, usize_to_f32(max) is exactly max, and Rust's saturating float to
+    // int cast maps NaN and values <= 0 to 0, so the cast plus `min` equals the branches below
+    // for every input, in fewer instructions on the hot sampling and bounds paths.
+    if u16::try_from(max).is_ok() {
+        return f32_to_usize_saturating(value).min(max);
+    }
     if value <= 0.0 {
         return 0;
     }
@@ -35,6 +41,15 @@ fn f32_to_usize_threshold_clamped(value: f32, max: usize) -> usize {
     reason = "value is clamped to a non-negative finite usize range before casting"
 )]
 fn f32_to_usize_bounded(value: f32) -> usize {
+    value as usize
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "float to int casts saturate, mapping NaN and negatives to 0"
+)]
+fn f32_to_usize_saturating(value: f32) -> usize {
     value as usize
 }
 
@@ -141,6 +156,49 @@ fn multiply_u8(a: u8, b: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn threshold_clamped_reference(value: f32, max: usize) -> usize {
+        if value <= 0.0 {
+            return 0;
+        }
+        let max_value = usize_to_f32(max);
+        if value >= max_value {
+            return max;
+        }
+        f32_to_usize_bounded(value.clamp(0.0, max_value))
+    }
+
+    #[test]
+    fn threshold_clamp_fast_path_matches_reference() {
+        let mut values = vec![
+            f32::NAN,
+            -f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            0.0,
+            -0.0,
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+            f32::MAX,
+            f32::MIN,
+        ];
+        for whole in 0..=u16::MAX {
+            let whole = f32::from(whole);
+            values.extend([whole, whole + 0.25, whole + 0.5, whole - 0.5, -whole]);
+        }
+        values.extend([65_536.0, 65_536.5, 1.0e6]);
+        for max in [0, 1, 2, 63, 255, 1023, 1279, 65_534, 65_535] {
+            for &value in &values {
+                for value in [value, value.round(), value.floor(), value.ceil()] {
+                    assert_eq!(
+                        f32_to_usize_threshold_clamped(value, max),
+                        threshold_clamped_reference(value, max),
+                        "value={value} max={max}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn usize_conversions_clamp_floor_ceil_and_round() {
