@@ -192,14 +192,18 @@ pub const SETTLE_FRAMES: usize = 60;
 
 /// Renders `scene` until egui's layout and texture uploads settle, returning the renderer.
 pub fn settled_renderer(scene: Scene) -> (SoftwareRenderer, egui::Context, SceneState) {
-    settled_renderer_after(scene, SETTLE_FRAMES)
+    settled_renderer_after(scene, SETTLE_FRAMES, true)
 }
 
+/// Like [`settled_renderer`], with the warm-up length and egui's shape anti-aliasing
+/// (`feathering`) chosen by the caller.
 pub fn settled_renderer_after(
     scene: Scene,
     settle_frames: usize,
+    feathering: bool,
 ) -> (SoftwareRenderer, egui::Context, SceneState) {
     let context = egui::Context::default();
+    context.tessellation_options_mut(|options| options.feathering = feathering);
     let mut renderer = SoftwareRenderer::default();
     // Every benchmark frame is identical; measure rasterization rather than the skip.
     renderer.set_skip_unchanged_frames(false);

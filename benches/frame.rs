@@ -2,11 +2,19 @@
 
 //! Frame benchmark over realistic egui scenes.
 //!
-//! `cargo bench --bench frame` reports per-scene rasterize and whole-render times.
-//! Pass `--frames N` to change the sample count, `--dump DIR` to write each scene's
-//! RGBA surface as `DIR/<scene>.rgba`, `--hash` to print golden hashes, `--stats` to print
-//! the renderer's deep-stat log lines, and `--scene NAME` to run one scene, and `--settle N` to shorten warm-up (for tracing).
-//! Under `cargo test` (the `--test`-less bench harness call) it renders one frame per scene.
+//! `cargo bench --bench frame` renders each scene a few hundred times and reports rasterize
+//! and whole-frame times in microseconds. Options:
+//!
+//! - `--frames N`: measured frames per scene.
+//! - `--scene NAME`: run only `form`, `preview`, or `window`.
+//! - `--no-feathering`: turn off egui's shape anti-aliasing, as Dream-INI's `PortMaster`
+//!   build does.
+//! - `--hash`: print each scene's golden hash.
+//! - `--dump DIR`: write each scene's surface to `DIR/<scene>.rgba`.
+//! - `--stats`: print the renderer's deep-stat log lines for one frame.
+//! - `--settle N`: shorten the warm-up, for instruction tracing under qemu.
+//!
+//! Without `--bench` (the way `cargo test --all-targets` runs it) each scene renders once.
 
 #[allow(dead_code, reason = "shared with the golden tests, which use the rest")]
 mod scenes;
@@ -25,6 +33,7 @@ fn main() {
     let mut print_stats = false;
     let mut only = None;
     let mut settle_frames = SETTLE_FRAMES;
+    let mut feathering = true;
     let mut bench_mode = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -40,6 +49,7 @@ fn main() {
             "--hash" => print_hash = true,
             "--stats" => print_stats = true,
             "--scene" => only = args.next(),
+            "--no-feathering" => feathering = false,
             "--settle" => {
                 settle_frames = args
                     .next()
@@ -57,7 +67,8 @@ fn main() {
         if only.as_deref().is_some_and(|name| name != scene.name()) {
             continue;
         }
-        let (mut renderer, context, mut state) = settled_renderer_after(scene, settle_frames);
+        let (mut renderer, context, mut state) =
+            settled_renderer_after(scene, settle_frames, feathering);
         let mut rasterize = Vec::with_capacity(frames);
         let mut total = Vec::with_capacity(frames);
         for _ in 0..frames {
