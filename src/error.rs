@@ -39,6 +39,9 @@ pub enum Error {
     },
     /// The texture handle was never created by this renderer, or has been freed.
     UnknownTexture(TextureId),
+    /// Every possible texture handle has been issued. Handles are never reused, so no more
+    /// textures can be created in this process.
+    TextureIdsExhausted,
     /// A texture update region does not fit inside the texture.
     TextureUpdateOutOfBounds(TextureId),
     /// A rectangle coordinate is NaN or infinite.
@@ -78,6 +81,7 @@ impl fmt::Display for Error {
                 )
             }
             Self::UnknownTexture(texture) => write!(f, "unknown or freed texture {texture}"),
+            Self::TextureIdsExhausted => f.write_str("every texture handle has been issued"),
             Self::TextureUpdateOutOfBounds(texture) => {
                 write!(f, "update region exceeds the bounds of texture {texture}")
             }

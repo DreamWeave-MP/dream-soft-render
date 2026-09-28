@@ -297,3 +297,38 @@ fn clear_overwrites_and_blending_writes_opaque_alpha() {
     assert_eq!(&frame.surface().pixels[..4], &[100, 50, 0, 255]);
     assert_eq!(&frame.surface().pixels[4..], &[0, 0, 0, 0]);
 }
+
+#[test]
+fn texture_handles_do_not_alias_across_renderers() {
+    let mut first = SoftwareRenderer::default();
+    let mut second = SoftwareRenderer::default();
+    let first_texture = first.create_texture(1, 1, &[255; 4]).expect("texture");
+    let second_texture = second.create_texture(1, 1, &[255; 4]).expect("texture");
+    assert_ne!(first_texture, second_texture);
+
+    assert_eq!(
+        second.free_texture(first_texture),
+        Err(Error::UnknownTexture(first_texture))
+    );
+    assert_eq!(
+        second.update_texture(first_texture, 0, 0, 1, 1, &[0; 4]),
+        Err(Error::UnknownTexture(first_texture))
+    );
+    let mut frame = second.begin_frame(4, 4).expect("frame");
+    assert_eq!(
+        frame.textured_rect(
+            Rect::from_min_size([0.0, 0.0], [4.0, 4.0]),
+            Rect::FULL_UV,
+            first_texture,
+            Color::WHITE,
+            ClipRect::ALL
+        ),
+        Err(Error::UnknownTexture(first_texture))
+    );
+    second
+        .free_texture(second_texture)
+        .expect("own texture frees");
+    first
+        .free_texture(first_texture)
+        .expect("own texture frees");
+}

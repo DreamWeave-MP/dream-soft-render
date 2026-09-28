@@ -29,17 +29,17 @@ impl SoftwareRenderer {
     /// # Errors
     ///
     /// [`Error::TextureSize`] for a zero or overflowing size, [`Error::PixelDataLength`] if
-    /// `pixels` is the wrong length, and [`Error::TextureBudget`] if the renderer's texture
-    /// storage would exceed [`MAX_TEXTURE_BYTES`](crate::MAX_TEXTURE_BYTES).
+    /// `pixels` is the wrong length, [`Error::TextureBudget`] if the renderer's texture
+    /// storage would exceed [`MAX_TEXTURE_BYTES`](crate::MAX_TEXTURE_BYTES), and
+    /// [`Error::TextureIdsExhausted`] once the process has issued every possible handle.
     pub fn create_texture(
         &mut self,
         width: usize,
         height: usize,
         pixels: &[u8],
     ) -> Result<TextureId, Error> {
-        let id = TextureId(self.next_texture_id);
+        let id = TextureId::issue().ok_or(Error::TextureIdsExhausted)?;
         self.textures.insert_native(id, width, height, pixels)?;
-        self.next_texture_id += 1;
         self.previous_frame_valid = false;
         Ok(id)
     }

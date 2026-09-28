@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::io;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::Error;
 
@@ -13,11 +14,22 @@ pub const MAX_TEXTURE_BYTES: usize = 8 * 1024 * 1024;
 /// A texture owned by a [`SoftwareRenderer`](crate::SoftwareRenderer), returned by
 /// [`create_texture`](crate::SoftwareRenderer::create_texture).
 ///
-/// Handles are never reused within one renderer, so a freed handle stays invalid.
+/// Handles are unique across the whole process and never reused. A freed handle stays invalid,
+/// and a handle from one renderer is [`Error::UnknownTexture`] to every other renderer instead
+/// of quietly naming whatever texture that renderer happens to hold under the same number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TextureId(pub(crate) u64);
 
+// One counter for every renderer in the process, so handles cannot alias across renderers.
+static NEXT_TEXTURE_ID: AtomicU64 = AtomicU64::new(0);
+
 impl TextureId {
+    /// Issues the next process-wide handle, or `None` once all `u64` values are spent. It never
+    /// wraps, because a wrapped counter would hand out a handle that is already in use.
+    pub(crate) fn issue() -> Option<Self> {
+        issue_from(&NEXT_TEXTURE_ID).map(Self)
+    }
+
     /// egui meshes name renderer-created textures as `TextureId::User(n)`; egui itself only
     /// uploads `Managed` textures, so the two never collide.
     pub(crate) const fn to_egui(self) -> egui::TextureId {
@@ -29,6 +41,14 @@ impl fmt::Display for TextureId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#{}", self.0)
     }
+}
+
+fn issue_from(counter: &AtomicU64) -> Option<u64> {
+    counter
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            next.checked_add(1)
+        })
+        .ok()
 }
 
 /// Stands in for "no texture": zero-sized textures sample as opaque white.
@@ -329,6 +349,15 @@ fn check_texture_budget(bytes_used: usize, old_len: usize, new_len: usize) -> io
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texture_id_issuance_stops_instead_of_wrapping() {
+        let counter = AtomicU64::new(u64::MAX - 2);
+        assert_eq!(issue_from(&counter), Some(u64::MAX - 2));
+        assert_eq!(issue_from(&counter), Some(u64::MAX - 1));
+        assert_eq!(issue_from(&counter), None);
+        assert_eq!(issue_from(&counter), None);
+    }
     use std::sync::Arc;
 
     #[test]

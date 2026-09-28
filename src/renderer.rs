@@ -89,7 +89,6 @@ pub struct SoftwareRenderer {
     // Primitives last rasterized into `surface`, valid only while `previous_frame_valid`.
     previous_primitives: Vec<egui::ClippedPrimitive>,
     previous_frame_valid: bool,
-    next_texture_id: u64,
     // Reused conversion buffer for meshes drawn through `Frame`.
     mesh_scratch: egui::Mesh,
 }
@@ -107,7 +106,6 @@ impl Default for SoftwareRenderer {
             skip_unchanged_frames: true,
             previous_primitives: Vec::new(),
             previous_frame_valid: false,
-            next_texture_id: 0,
             mesh_scratch: egui::Mesh::default(),
         }
     }
