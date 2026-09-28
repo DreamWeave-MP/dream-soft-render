@@ -693,6 +693,9 @@ fn white_constant_texel_constant_run_alpha(
 
     let last_dx = start_dx.checked_add(len - 1)?;
     let first = white_constant_texel_pixel_alpha(row_color, color_step, start_dx);
+    if last_dx == start_dx {
+        return Some(first);
+    }
     let last = white_constant_texel_pixel_alpha(row_color, color_step, last_dx);
     (first == last).then_some(first)
 }
@@ -731,6 +734,9 @@ fn white_constant_texel_constant_run_color(
     let last_dx = run.start_dx.checked_add(run.len - 1)?;
     let first =
         white_constant_texel_pixel_color_with_alpha(row_color, color_step, run.start_dx, alpha);
+    if last_dx == run.start_dx {
+        return Some(first);
+    }
     let last = white_constant_texel_pixel_color_with_alpha(row_color, color_step, last_dx, alpha);
     (first == last).then_some(first)
 }
