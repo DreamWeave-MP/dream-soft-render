@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -70,9 +71,35 @@ pub(crate) static EMPTY_TEXTURE: TextureImage = TextureImage {
     pixels: Vec::new(),
 };
 
+/// Hashes texture keys with one multiply per word. The keys are ids this crate or egui hands
+/// out, never chosen by an adversary, so `SipHash`'s flood resistance buys nothing, and the store
+/// is looked up once per textured draw.
+#[derive(Default)]
+struct TextureKeyHasher(u64);
+
+impl Hasher for TextureKeyHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(u64::from(byte));
+        }
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct TextureStore {
-    textures: HashMap<TextureKey, TextureImage>,
+    textures: HashMap<TextureKey, TextureImage, BuildHasherDefault<TextureKeyHasher>>,
     bytes_used: usize,
 }
 

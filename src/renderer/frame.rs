@@ -276,9 +276,7 @@ impl Frame<'_> {
         {
             return Err(Error::NonFiniteVertex { index, field });
         }
-        if let Some(texture) = mesh.texture {
-            self.check_texture(texture)?;
-        }
+        // The draw below looks the texture up once and fails before writing a pixel.
         let renderer = &mut *self.renderer;
         let clip = clip.to_bounds(renderer.surface.width, renderer.surface.height);
         renderer.rasterize_frame_mesh(
