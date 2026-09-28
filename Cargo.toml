@@ -1,0 +1,15 @@
+[package]
+name = "dream-soft-render"
+version = "0.1.0"
+edition = "2024"
+description = "CPU rasterizer that draws egui frames into an RGBA pixel buffer"
+license = "MIT OR Apache-2.0"
+keywords = ["egui", "software-renderer", "rasterizer", "framebuffer"]
+categories = ["graphics", "gui", "rendering"]
+
+[dependencies]
+egui = "0.34"
+
+[[bench]]
+name = "frame"
+harness = false
