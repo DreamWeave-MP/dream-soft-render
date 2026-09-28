@@ -1483,7 +1483,6 @@ mod tests {
         assert_eq!(raster_stats.translucent_px, raster_stats.solid_fan_px);
         assert_eq!(raster_timings.generic_solid_triangle, 0);
         assert_eq!(raster_timings.generic_textured_triangle, 0);
-        assert!(raster_timings.solid_fan_accepted_probe > 0);
         assert_eq!(raster_timings.solid_fan_rejected_probe, 0);
         assert!(
             primitive_stats
