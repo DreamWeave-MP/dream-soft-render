@@ -62,6 +62,14 @@ pub(super) fn try_rasterize_quad_window(
     };
 
     let vertices = [v0, v1, v2, v3, v4, v5];
+    // Both fast paths need one color on all four corners, and with four unique indices the
+    // six vertices are those corners, so mixed colors (feathered edges) can never pass. Stats
+    // runs take the full path so rejections keep their precise reasons.
+    if !instrumentation.collects_stats()
+        && vertices[1..].iter().any(|vertex| vertex.color != v0.color)
+    {
+        return Ok(false);
+    }
     if let Some(stats) = instrumentation.primitive_stats() {
         stats.record_quad_window(vertices, texture);
     }

@@ -1187,6 +1187,10 @@ impl RasterInstrumentation<'_> {
         borrow_optional_mut(&mut self.timings)
     }
 
+    const fn collects_stats(&self) -> bool {
+        self.primitive_stats.is_some() || self.raster_stats.is_some() || self.timings.is_some()
+    }
+
     fn timing_start(&self) -> Option<Instant> {
         self.timings.as_ref().map(|_| Instant::now())
     }
