@@ -3,7 +3,8 @@
 //! Benchmark of the drawing API alone, with no egui anywhere.
 //!
 //! `cargo bench --bench draw` draws each workload a few hundred times into a 640x480 surface and
-//! reports microseconds per frame. `--frames N` sets the sample count. Without `--bench` (the
+//! reports microseconds per frame. `--frames N` sets the sample count and `--workload NAME` runs
+//! one workload. Without `--bench` (the
 //! way `cargo test --all-targets` runs it) each workload draws once.
 //!
 //! - `glyphs`: a page of 7x9 textured rectangles cut from a coverage atlas and tinted, the
@@ -33,10 +34,12 @@ struct Workloads {
 fn main() -> Result<(), Error> {
     let mut frames = 300_usize;
     let mut bench_mode = false;
+    let mut only = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--bench" => bench_mode = true,
+            "--workload" => only = args.next(),
             "--frames" => {
                 frames = args
                     .next()
@@ -62,6 +65,9 @@ fn main() -> Result<(), Error> {
         ("mesh", draw_mesh),
     ];
     for (name, draw) in draws {
+        if only.as_deref().is_some_and(|only| only != name) {
+            continue;
+        }
         let mut samples = Vec::with_capacity(frames);
         for _ in 0..frames {
             let start = Instant::now();
