@@ -939,6 +939,24 @@ fn rasterize_separable_uv_textured_rect_no_stats_modulated(
             }
             if let Some(first_texel_x) = contiguous_texel_x
                 && x + TEXTURED_RECT_VECTOR_BLOCK_PX > range.end_x
+            {
+                let px = (range.end_x - x).min(TEXTURED_RECT_VECTOR_BLOCK_PX_4);
+                let texture_offset = texture_row_offset + (first_texel_x + x - range.start_x) * 4;
+                if rasterize_sampled_textured_rect_modulated_rgba4_neon(
+                    surface,
+                    pixel_offset,
+                    &texture.pixels,
+                    texture_offset,
+                    px,
+                    vertex_color,
+                ) {
+                    pixel_offset += px * 4;
+                    x += px;
+                    continue;
+                }
+            }
+            if let Some(first_texel_x) = contiguous_texel_x
+                && x + TEXTURED_RECT_VECTOR_BLOCK_PX > range.end_x
                 && x + TEXTURED_RECT_VECTOR_BLOCK_PX_4 <= range.end_x
             {
                 scalar_end = x + TEXTURED_RECT_VECTOR_BLOCK_PX_4;
@@ -1511,6 +1529,93 @@ fn rasterize_sampled_textured_rect_modulated_vector_block_4_neon(
 }
 
 #[cfg(not(all(target_arch = "aarch64", target_endian = "little")))]
+const fn rasterize_sampled_textured_rect_modulated_rgba4_neon(
+    _surface: &mut SoftwareSurface,
+    _pixel_offset: usize,
+    _texels: &[u8],
+    _texture_offset: usize,
+    _px: usize,
+    _vertex_color: [u8; 4],
+) -> bool {
+    false
+}
+
+/// Modulates and blends `px` (1 to 4) contiguous texels onto the surface as one interleaved
+/// 16-byte RGBA vector, returning false (having written nothing) when a full 16-byte read of
+/// the texture or surface would leave its buffer.
+///
+/// Per byte this is the scalar path's math: `round(texel * vertex / 255)`, then
+/// `src + round(dst * (255 - alpha) / 255)` saturating, alpha forced to 255, and lanes whose
+/// modulated alpha is 0 keep the destination. Texels past `px` are zeroed, so those lanes are
+/// transparent and write back the destination bytes they read.
+#[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+fn rasterize_sampled_textured_rect_modulated_rgba4_neon(
+    surface: &mut SoftwareSurface,
+    pixel_offset: usize,
+    texels: &[u8],
+    texture_offset: usize,
+    px: usize,
+    vertex_color: [u8; 4],
+) -> bool {
+    use core::arch::aarch64::{
+        uint8x8_t, uint16x8_t, vaddq_u16, vandq_u8, vbslq_u8, vceqq_u8, vcltq_u8, vcombine_u8,
+        vdupq_n_u8, vdupq_n_u16, vdupq_n_u32, vget_low_u8, vld1q_u8, vmovn_u16, vmull_high_u8,
+        vmull_u8, vmvnq_u8, vorrq_u8, vqaddq_u8, vqtbl1q_u8, vreinterpretq_u8_u32, vshrq_n_u16,
+        vst1q_u8,
+    };
+
+    const BYTE_INDEX: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const ALPHA_BROADCAST: [u8; 16] = [3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15];
+    const ALPHA_BYTES: [u8; 16] = [0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255];
+
+    unsafe fn divide_product(product: uint16x8_t) -> uint8x8_t {
+        let biased = unsafe { vaddq_u16(product, vdupq_n_u16(128)) };
+        let correction = unsafe { vshrq_n_u16(biased, 8) };
+        let quotient = unsafe { vshrq_n_u16(vaddq_u16(biased, correction), 8) };
+        unsafe { vmovn_u16(quotient) }
+    }
+
+    debug_assert!((1..=TEXTURED_RECT_VECTOR_BLOCK_PX_4).contains(&px));
+    let Some(texels) = texels.get(texture_offset..texture_offset + 16) else {
+        return false;
+    };
+    let Some(pixels) = surface.pixels.get_mut(pixel_offset..pixel_offset + 16) else {
+        return false;
+    };
+    // SAFETY: both slices are exactly 16 bytes; every load and store below stays inside them,
+    // and the constant tables are 16-byte arrays.
+    unsafe {
+        let live = vcltq_u8(
+            vld1q_u8(BYTE_INDEX.as_ptr()),
+            vdupq_n_u8(u8::try_from(px * 4).unwrap_or(16)),
+        );
+        let texels = vandq_u8(vld1q_u8(texels.as_ptr()), live);
+        let vertex = vreinterpretq_u8_u32(vdupq_n_u32(u32::from_le_bytes(vertex_color)));
+        let modulated = vcombine_u8(
+            divide_product(vmull_u8(vget_low_u8(texels), vget_low_u8(vertex))),
+            divide_product(vmull_high_u8(texels, vertex)),
+        );
+        let alpha = vqtbl1q_u8(modulated, vld1q_u8(ALPHA_BROADCAST.as_ptr()));
+        let inverse_alpha = vmvnq_u8(alpha);
+        let destination = vld1q_u8(pixels.as_ptr());
+        let blend = vcombine_u8(
+            divide_product(vmull_u8(
+                vget_low_u8(destination),
+                vget_low_u8(inverse_alpha),
+            )),
+            divide_product(vmull_high_u8(destination, inverse_alpha)),
+        );
+        let blended = vorrq_u8(vqaddq_u8(modulated, blend), vld1q_u8(ALPHA_BYTES.as_ptr()));
+        let transparent = vceqq_u8(alpha, vdupq_n_u8(0));
+        vst1q_u8(
+            pixels.as_mut_ptr(),
+            vbslq_u8(transparent, destination, blended),
+        );
+    }
+    true
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_endian = "little")))]
 fn rasterize_sampled_textured_rect_vector_block_neon_with_alpha(
     _surface: &mut SoftwareSurface,
     _pixel_offset: usize,
@@ -2068,6 +2173,66 @@ fn solid_rect_boundary_index(boundary: f32, clip_max: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
+    #[test]
+    fn modulated_rgba4_neon_matches_scalar_tail_pixels() {
+        let mut state = 0x1234_5678_u32;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            // Bias toward the 0 and 255 alpha edges where the blend branches differ.
+            match state % 7 {
+                0 => 0,
+                1 => 255,
+                _ => u8::try_from(state >> 24).unwrap_or(0),
+            }
+        };
+        for case in 0..20_000 {
+            let px = 1 + case % 4;
+            let texels: Vec<u8> = (0..16).map(|_| next()).collect();
+            let destination: Vec<u8> = (0..16).map(|_| next()).collect();
+            let vertex_color = [next(), next(), next(), next()];
+
+            let mut actual = SoftwareSurface {
+                width: 4,
+                height: 1,
+                pixels: destination.clone(),
+            };
+            assert!(rasterize_sampled_textured_rect_modulated_rgba4_neon(
+                &mut actual,
+                0,
+                &texels,
+                0,
+                px,
+                vertex_color,
+            ));
+            let mut expected = SoftwareSurface {
+                width: 4,
+                height: 1,
+                pixels: destination,
+            };
+            for pixel in 0..px {
+                let offset = pixel * 4;
+                rasterize_sampled_textured_rect_modulated_tail_pixel(
+                    &mut expected,
+                    offset,
+                    [
+                        texels[offset],
+                        texels[offset + 1],
+                        texels[offset + 2],
+                        texels[offset + 3],
+                    ],
+                    vertex_color,
+                );
+            }
+            assert_eq!(
+                actual.pixels, expected.pixels,
+                "px={px} texels={texels:?} vertex={vertex_color:?}"
+            );
+        }
+    }
 
     #[test]
     fn separable_uv_textured_rect_matches_generic_for_clipped_flipped_modulated_texture() {
