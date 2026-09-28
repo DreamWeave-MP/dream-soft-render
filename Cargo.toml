@@ -10,6 +10,7 @@ documentation = "https://docs.rs/dream-soft-render"
 readme = "README.md"
 keywords = ["rasterizer", "software-renderer", "egui", "framebuffer", "rgba"]
 categories = ["graphics", "gui", "rendering"]
+exclude = [".github"]
 
 [dependencies]
 egui = "0.34"

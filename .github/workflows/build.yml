@@ -1,0 +1,38 @@
+name: Library CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    # Keep branch pushes restricted to main. Non-tag pushes publish to the shared
+    # "development" release, so feature branches will compete for the same release.
+    branches: main
+    tags: ['*']
+
+jobs:
+  build:
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v46
+    secrets: inherit
+    with:
+      crate_names: '["dream-soft-render"]'
+
+      # Dream-INI renders its PortMaster GUI through this crate.
+      dependent_repo_names: |
+        DreamWeave-MP/dream-ini
+
+      # rustdoc to GitHub Pages on main; docs.rs builds its own copy on publish.
+      publish_docs: true
+
+      # rust-version in Cargo.toml follows egui's, which is the real floor.
+      msrv: auto
+
+      # benches/frame.rs is a custom harness, so the release gets the raw benchmark log.
+      generate_benchmarks: true
+
+      # llvm_toolchain is for crates under the clang cross-language LTO policy (l3i and its
+      # dependents). This crate has no C++ and no l3i dependency. Turn it on if that changes.
+      # llvm_toolchain: true
