@@ -1,0 +1,23 @@
+# Build and link through clang and lld, the DreamWeave clang toolchain policy (l3i's
+# TOOLCHAIN.md, in dream-binder): the Rust side emits bitcode and lld runs one thin LTO over it.
+# StroggForge CI installs a clang and lld matching rustc's LLVM for every build; locally, install
+# the same LLVM major rustc reports (`rustc -vV`). Environment variables override every entry here.
+#
+# aarch64-unknown-linux-gnu is left out on purpose: StroggForge's PortMaster cross build sets it
+# up entirely through the environment. Android builds use the NDK's toolchain. These entries apply
+# to building this crate on its own, not to crates that depend on it.
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-Clinker-plugin-lto", "-Clinker=clang", "-Clink-arg=-fuse-ld=lld"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-Clinker-plugin-lto", "-Clinker=clang", "-Clink-arg=-fuse-ld=lld"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-Clinker-plugin-lto", "-Clinker=clang", "-Clink-arg=-fuse-ld=lld"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-Clinker-plugin-lto", "-Clinker=lld-link"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-Clinker-plugin-lto", "-Clinker=lld-link"]
