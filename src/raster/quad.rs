@@ -259,6 +259,72 @@ fn triangles_share_rectangle_diagonal(vertices: [&egui::epaint::Vertex; 6]) -> b
 fn textured_quad_fast_path_candidate(
     vertices: [&egui::epaint::Vertex; 6],
 ) -> Result<TexturedQuadFastPathCandidate, TexturedQuadFastPathRejection> {
+    if let Some(candidate) = canonical_textured_quad_candidate(vertices) {
+        return Ok(candidate);
+    }
+    general_textured_quad_fast_path_candidate(vertices)
+}
+
+/// The fast-path candidate for egui's own rect layout (text glyphs, images), found without the
+/// general search: four vertices `tl, tr, bl, br` drawn as `(tl, tr, bl)` and `(bl, tr, br)`.
+///
+/// It returns only when the general search is certain to accept, with the same corners and
+/// bounds: shared vertices are the same `Vertex` in the mesh, coordinates match bit for bit
+/// with `x0 < x1` and `y0 < y1`, and the general path's area, color, and affine-UV checks are
+/// repeated as-is. Anything else goes to the general search.
+fn canonical_textured_quad_candidate(
+    vertices: [&egui::epaint::Vertex; 6],
+) -> Option<TexturedQuadFastPathCandidate> {
+    let [tl, tr, bl, bl_again, tr_again, br] = vertices;
+    if !std::ptr::eq(bl, bl_again) || !std::ptr::eq(tr, tr_again) {
+        return None;
+    }
+    let (x0, y0, x1, y1) = (tl.pos.x, tl.pos.y, br.pos.x, br.pos.y);
+    let same = |left: f32, right: f32| left.to_bits() == right.to_bits();
+    let axis_aligned_rect = x0.is_finite()
+        && y0.is_finite()
+        && x1.is_finite()
+        && y1.is_finite()
+        && x0 < x1
+        && y0 < y1
+        && same(tr.pos.x, x1)
+        && same(tr.pos.y, y0)
+        && same(bl.pos.x, x0)
+        && same(bl.pos.y, y1);
+    if !axis_aligned_rect {
+        return None;
+    }
+    if edge(tl.pos, tr.pos, bl.pos).abs() <= f32::EPSILON
+        || edge(bl.pos, tr.pos, br.pos).abs() <= f32::EPSILON
+        || tl.color != tr.color
+        || tl.color != bl.color
+        || tl.color != br.color
+    {
+        return None;
+    }
+    let affine_br_uv = egui::pos2(tr.uv.x + bl.uv.x - tl.uv.x, tr.uv.y + bl.uv.y - tl.uv.y);
+    if !near_finite_pos2(br.uv, affine_br_uv, UV_AFFINE_EPSILON) {
+        return None;
+    }
+    Some(TexturedQuadFastPathCandidate {
+        corners: TexturedQuadCorners {
+            tl: *tl,
+            tr: *tr,
+            bl: *bl,
+            br: *br,
+        },
+        bounds: QuadBounds {
+            min_x: x0,
+            min_y: y0,
+            max_x: x1,
+            max_y: y1,
+        },
+    })
+}
+
+fn general_textured_quad_fast_path_candidate(
+    vertices: [&egui::epaint::Vertex; 6],
+) -> Result<TexturedQuadFastPathCandidate, TexturedQuadFastPathRejection> {
     if !triangles_share_rectangle_diagonal(vertices) {
         return Err(TexturedQuadFastPathRejection::NotRectangleDiagonal);
     }
@@ -2173,6 +2239,81 @@ fn solid_rect_boundary_index(boundary: f32, clip_max: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_textured_quad_candidate_matches_general_search() {
+        let mut state = 0x9e37_79b9_u32;
+        let mut next = move |modulus: u32| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state % modulus
+        };
+        let pick = |choice: u32| -> f32 {
+            match choice {
+                0 => -0.0,
+                1 => 0.0,
+                2 => f32::NAN,
+                3 => 1.0e-7,
+                4 => 2.0e-4,
+                _ => f32::from(u16::try_from(choice).unwrap_or(0)) * 0.25 - 40.0,
+            }
+        };
+        let mut accepted = 0;
+        for _ in 0..200_000 {
+            let (x0, y0) = (pick(next(400)), pick(next(400)));
+            let (x1, y1) = (pick(next(400)), pick(next(400)));
+            let tr_x = if next(8) == 0 { -x1 } else { x1 };
+            let odd_color_vertex = next(40);
+            let skew_br_uv = next(10) == 0;
+            let color = |vertex: u32| {
+                let red = if vertex == odd_color_vertex { 200 } else { 9 };
+                egui::Color32::from_rgba_premultiplied(red, 1, 2, 3)
+            };
+            let (u0, v0, u1, v1) = (0.125, 0.25, 0.375, 0.5);
+            let br_u = if skew_br_uv { u1 + 0.01 } else { u1 };
+            let vertex = |x: f32, y: f32, u: f32, v: f32, index: u32| egui::epaint::Vertex {
+                pos: egui::pos2(x, y),
+                uv: egui::pos2(u, v),
+                color: color(index),
+            };
+            let quad = [
+                vertex(x0, y0, u0, v0, 0),
+                vertex(tr_x, y0, u1, v0, 1),
+                vertex(x0, y1, u0, v1, 2),
+                vertex(x1, y1, br_u, v1, 3),
+            ];
+            let vertices = [&quad[0], &quad[1], &quad[2], &quad[2], &quad[1], &quad[3]];
+            let Some(canonical) = canonical_textured_quad_candidate(vertices) else {
+                continue;
+            };
+            accepted += 1;
+            let general = general_textured_quad_fast_path_candidate(vertices)
+                .unwrap_or_else(|_| panic!("general search rejected {quad:?}"));
+            let bits = |candidate: &TexturedQuadFastPathCandidate| {
+                let TexturedQuadFastPathCandidate { corners, bounds } = candidate;
+                let vertex_bits = |vertex: &egui::epaint::Vertex| {
+                    [vertex.pos.x, vertex.pos.y, vertex.uv.x, vertex.uv.y]
+                        .map(f32::to_bits)
+                        .into_iter()
+                        .chain([u32::from_le_bytes(vertex.color.to_array())])
+                        .collect::<Vec<_>>()
+                };
+                [&corners.tl, &corners.tr, &corners.bl, &corners.br]
+                    .into_iter()
+                    .flat_map(vertex_bits)
+                    .chain(
+                        [bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y].map(f32::to_bits),
+                    )
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(bits(&canonical), bits(&general), "{quad:?}");
+        }
+        assert!(
+            accepted > 20_000,
+            "only {accepted} canonical quads accepted"
+        );
+    }
 
     #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
     #[test]
