@@ -49,6 +49,23 @@ pub struct RenderFrame<'a> {
     pub synthetic_workload: Option<&'a SampledRectModulatedWorkload>,
 }
 
+impl<'a> RenderFrame<'a> {
+    /// A frame for `context` with logging, stats, and the synthetic benchmark off.
+    #[must_use]
+    pub const fn new(context: &'a egui::Context) -> Self {
+        Self {
+            context,
+            log: None,
+            log_frame: false,
+            log_render_stats: false,
+            hitch_log_threshold: None,
+            frame_index: 0,
+            repaint_request_due_before_frame: false,
+            synthetic_workload: None,
+        }
+    }
+}
+
 impl RenderFrame<'_> {
     fn write_log(&self, message: impl AsRef<str>) {
         if let Some(log) = self.log {
@@ -601,9 +618,15 @@ impl ClearElisionFrameStats {
 /// What one [`SoftwareRenderer::render_egui`] call produced.
 #[derive(Clone, Copy, Debug)]
 pub struct RenderOutcome {
+    /// How long egui wants to wait before the next frame; `Duration::MAX` means no repaint was
+    /// requested.
     pub repaint_delay: Duration,
+    /// Stage timings, measured only when [`RenderFrame::log_frame`] or
+    /// [`RenderFrame::hitch_log_threshold`] asked for them.
     pub timings: Option<RenderTimings>,
+    /// Clipped primitives egui produced.
     pub primitive_count: usize,
+    /// Texture storage after the frame, and this frame's uploads.
     pub texture_evidence: TextureEvidence,
     /// False when the frame matched the previous one and the surface was left untouched,
     /// so presenting it again can be skipped.
@@ -613,23 +636,36 @@ pub struct RenderOutcome {
 /// Texture store totals and this frame's texture upload counts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TextureEvidence {
+    /// Textures stored after the frame.
     pub count: usize,
+    /// Bytes of texture pixels stored after the frame.
     pub bytes: usize,
+    /// Texture uploads egui made this frame.
     pub set_count: usize,
+    /// Bytes those uploads carried.
     pub set_bytes: usize,
+    /// Uploads that replaced a whole texture.
     pub full_upload_count: usize,
+    /// Uploads that patched part of an existing texture.
     pub partial_update_count: usize,
 }
 
 /// Per-stage render durations in microseconds.
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTimings {
+    /// Sizing the surface, and clearing it if the size changed.
     pub resize_clear: u128,
+    /// Running the UI closure.
     pub egui_run: u128,
+    /// Applying egui's texture uploads.
     pub texture_apply: u128,
+    /// Tessellating egui's shapes into meshes.
     pub tessellate: u128,
+    /// Rasterizing the meshes (zero when an unchanged frame skipped it).
     pub rasterize: u128,
+    /// Freeing textures egui released.
     pub texture_free: u128,
+    /// The whole call.
     pub total: u128,
 }
 
