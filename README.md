@@ -193,13 +193,15 @@ The golden hashes are the same on both architectures. If they are not, the NEON 
 ## Benchmarks
 
 ```sh
+cargo bench --bench draw
 cargo bench --features egui --bench frame
 cargo bench --features egui --bench frame -- --no-feathering --scene form
 ```
 
-The benchmark renders the golden scenes a few hundred times each and reports rasterization and
-whole-frame times in microseconds. `--help` does not exist; the options are listed at the top of
-`benches/frame.rs`.
+`draw` exercises the drawing API alone, with no egui: a page of glyph-sized textured rectangles,
+stacked panels, and a gradient triangle fan. `frame` renders the egui golden scenes and reports
+rasterization and whole-frame times separately. Both report microseconds per frame. `--help`
+does not exist; the options are listed at the top of each file under `benches/`.
 
 Wall-clock numbers from a desktop x86 CPU tell you about a desktop x86 CPU. For the handhelds
 this crate targets, compare `AArch64` instruction counts, or run it on the device.

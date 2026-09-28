@@ -29,6 +29,10 @@ name = "golden"
 required-features = ["egui"]
 
 [[bench]]
+name = "draw"
+harness = false
+
+[[bench]]
 name = "frame"
 harness = false
 required-features = ["egui"]
