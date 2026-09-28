@@ -2,6 +2,11 @@
 
 //! Pixel-exact regression guard: every rasterizer path (scalar and NEON) must keep
 //! producing these frames byte for byte.
+//!
+//! The rasterizer is deterministic. egui is almost deterministic: its font-atlas discs and
+//! shadow easing call `powf`, which comes from the platform's C math library. glibc and musl
+//! agree on these scenes. If a hash fails on one operating system only, check egui's math
+//! before blaming the rasterizer.
 
 #[allow(
     dead_code,

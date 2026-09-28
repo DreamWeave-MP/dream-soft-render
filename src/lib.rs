@@ -127,3 +127,8 @@ pub use geometry::{ClipRect, Rect, Vertex};
 pub use renderer::{Frame, Mesh, SoftwareRenderer};
 pub use surface::{MAX_SURFACE_PIXELS, SoftwareSurface};
 pub use texture::{MAX_TEXTURE_BYTES, TextureId};
+
+// Compiles the README's examples so they cannot drift from the API.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

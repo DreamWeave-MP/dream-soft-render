@@ -2,9 +2,13 @@
 name = "dream-soft-render"
 version = "0.1.0"
 edition = "2024"
-description = "CPU rasterizer that draws egui frames into an RGBA pixel buffer"
+rust-version = "1.92"
+description = "Deterministic CPU rasterizer for 2D meshes and egui frames, writing premultiplied RGBA8"
 license = "MIT OR Apache-2.0"
-keywords = ["egui", "software-renderer", "rasterizer", "framebuffer"]
+repository = "https://github.com/DreamWeave-MP/dream-soft-render"
+documentation = "https://docs.rs/dream-soft-render"
+readme = "README.md"
+keywords = ["rasterizer", "software-renderer", "egui", "framebuffer", "rgba"]
 categories = ["graphics", "gui", "rendering"]
 
 [dependencies]
