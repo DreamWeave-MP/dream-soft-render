@@ -1,6 +1,6 @@
 [package]
 name = "dream-soft-render"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.92"
 description = "Deterministic CPU rasterizer for 2D meshes and egui frames, writing premultiplied RGBA8"

@@ -14,14 +14,14 @@ core that notices every wasted instruction.
 
 ```toml
 [dependencies]
-dream-soft-render = "0.1"
+dream-soft-render = "1"
 ```
 
 The crate has no egui dependency by default. The egui adapter is behind a feature:
 
 ```toml
 [dependencies]
-dream-soft-render = { version = "0.1", features = ["egui"] }
+dream-soft-render = { version = "1", features = ["egui"] }
 ```
 
 ## Drawing
