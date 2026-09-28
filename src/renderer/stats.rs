@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+// The counters here are collected by the core rasterizer, but only the egui adapter's
+// diagnostics log reads them back. Without that feature they are written and never read.
+#![cfg_attr(not(feature = "egui"), allow(dead_code))]
+
 use crate::Vertex;
 use crate::geometry::Pos2;
 use std::fmt;

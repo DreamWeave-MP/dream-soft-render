@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+// The counters here are collected by the core rasterizer, but only the egui adapter's
+// diagnostics log reads them back. Without that feature they are written and never read.
+#![cfg_attr(not(feature = "egui"), allow(dead_code))]
+
 const TEXTURED_RECT_VECTOR_BLOCK_PX: usize = 16;
 const CONSTANT_TEXEL_TEXTURED_TRIANGLE_REPEATED_COLOR_BLOCK_PX: usize = 16;
 pub(crate) const TEXTURED_RECT_SAMPLED_VECTOR_BACKEND_AVAILABLE: usize =

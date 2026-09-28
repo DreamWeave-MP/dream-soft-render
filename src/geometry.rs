@@ -48,7 +48,7 @@ impl Vertex {
         pos2(self.uv[0], self.uv[1])
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "egui"))]
     pub(crate) const fn to_egui(self) -> egui::epaint::Vertex {
         egui::epaint::Vertex {
             pos: egui::pos2(self.pos[0], self.pos[1]),

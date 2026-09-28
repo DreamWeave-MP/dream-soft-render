@@ -42,7 +42,7 @@ impl SoftwareRenderer {
     ) -> Result<TextureId, Error> {
         let id = TextureId::issue().ok_or(Error::TextureIdsExhausted)?;
         self.textures.insert_native(id, width, height, pixels)?;
-        self.previous_frame_valid = false;
+        self.forget_last_egui_frame();
         Ok(id)
     }
 
@@ -65,7 +65,7 @@ impl SoftwareRenderer {
     ) -> Result<(), Error> {
         self.textures
             .update_native(texture, [x, y], [width, height], pixels)?;
-        self.previous_frame_valid = false;
+        self.forget_last_egui_frame();
         Ok(())
     }
 
@@ -77,7 +77,7 @@ impl SoftwareRenderer {
     /// renderer.
     pub fn free_texture(&mut self, texture: TextureId) -> Result<(), Error> {
         self.textures.free_native(texture)?;
-        self.previous_frame_valid = false;
+        self.forget_last_egui_frame();
         Ok(())
     }
 
@@ -99,8 +99,7 @@ impl SoftwareRenderer {
         if resized {
             self.surface.clear(Color::TRANSPARENT.to_array());
         }
-        // Drawing outside egui invalidates the unchanged-egui-frame shortcut.
-        self.previous_frame_valid = false;
+        self.forget_last_egui_frame();
         Ok(Frame { renderer: self })
     }
 
@@ -114,7 +113,7 @@ impl SoftwareRenderer {
             None => &EMPTY_TEXTURE,
             Some(id) => self
                 .textures
-                .get(&TextureKey::Native(id))
+                .get(TextureKey::Native(id))
                 .ok_or(Error::UnknownTexture(id))?,
         };
         if clip.is_empty() {
@@ -296,7 +295,7 @@ impl Frame<'_> {
         if self
             .renderer
             .textures
-            .get(&TextureKey::Native(texture))
+            .get(TextureKey::Native(texture))
             .is_some()
         {
             Ok(())
@@ -306,7 +305,8 @@ impl Frame<'_> {
     }
 }
 
-#[cfg(test)]
+// Compares Frame::mesh against the egui mesh path.
+#[cfg(all(test, feature = "egui"))]
 mod tests {
     use super::*;
 

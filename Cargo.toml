@@ -12,9 +12,23 @@ keywords = ["rasterizer", "software-renderer", "egui", "framebuffer", "rgba"]
 categories = ["graphics", "gui", "rendering"]
 exclude = [".github"]
 
+[features]
+default = []
+# The egui adapter: SoftwareRenderer::render_egui and everything in egui_adapter.
+egui = ["dep:egui"]
+
 [dependencies]
-egui = "0.34"
+egui = { version = "0.34", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[test]]
+name = "golden"
+required-features = ["egui"]
 
 [[bench]]
 name = "frame"
 harness = false
+required-features = ["egui"]

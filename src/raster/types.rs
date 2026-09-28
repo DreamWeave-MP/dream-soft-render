@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#[cfg(feature = "egui")]
 use std::io;
 
+#[cfg(feature = "egui")]
 use super::math::f32_to_usize_floor_clamped;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,6 +71,7 @@ impl TriangleRasterBounds {
 }
 
 impl ClipBounds {
+    #[cfg(any(test, feature = "egui"))]
     /// The whole `width`x`height` surface.
     pub(crate) const fn full(width: usize, height: usize) -> Self {
         Self {
@@ -79,6 +82,7 @@ impl ClipBounds {
         }
     }
 
+    #[cfg(feature = "egui")]
     /// Pixel bounds covering a float rectangle given as `[min_x, min_y, max_x, max_y]`, grown
     /// outward to whole pixels and clamped to the surface. Non-finite edges are an error.
     pub(crate) fn from_float_edges(
@@ -104,6 +108,7 @@ impl ClipBounds {
     }
 }
 
+#[cfg(feature = "egui")]
 fn clamp_rect_value(value: f32, max: usize) -> io::Result<usize> {
     if !value.is_finite() {
         return Err(io::Error::other("non-finite clip rectangle value"));

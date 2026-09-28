@@ -14,6 +14,7 @@ use super::types::{ClipBounds, TexturedQuadFastPathRejection};
 use super::{RasterStats, UV_AFFINE_EPSILON, duration_as_us};
 use crate::{surface::SoftwareSurface, texture::TextureImage};
 
+#[cfg(feature = "egui")]
 const CLEAR_ELISION_NEAR_FULL_SURFACE_BASIS_POINTS: usize = 9_500;
 const TEXTURED_RECT_VECTOR_BLOCK_PX: usize = 16;
 const TEXTURED_RECT_VECTOR_BLOCK_PX_4: usize = 4;
@@ -30,6 +31,7 @@ enum SampledTexturedRectVectorBlockAlpha {
     Mixed,
 }
 
+#[cfg(feature = "egui")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClearElisionQuadRejection {
     NotRect,
@@ -39,6 +41,7 @@ pub(crate) enum ClearElisionQuadRejection {
     NotFullSurfaceOpaqueRect,
 }
 
+#[cfg(feature = "egui")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ClearElisionQuadEvidence {
     pub(crate) visible_px: usize,
@@ -146,6 +149,7 @@ pub(crate) fn textured_quad_fast_path_rejection(
     textured_quad_fast_path_candidate(vertices).err()
 }
 
+#[cfg(feature = "egui")]
 pub(crate) fn clear_elision_quad_evidence(
     vertices: [&Vertex; 6],
     texture: &TextureImage,
@@ -426,6 +430,7 @@ fn axis_aligned_quad_bounds(vertices: [&Vertex; 6]) -> Option<QuadBounds> {
     })
 }
 
+#[cfg(feature = "egui")]
 impl ClearElisionQuadEvidence {
     const fn rejected(rejection: ClearElisionQuadRejection) -> Self {
         Self {
@@ -439,6 +444,7 @@ impl ClearElisionQuadEvidence {
     }
 }
 
+#[cfg(feature = "egui")]
 fn clipped_quad_pixel_area(bounds: QuadBounds, clip: ClipBounds) -> usize {
     let start_x = solid_rect_boundary_index(bounds.min_x, clip.max_x).max(clip.min_x);
     let end_x = solid_rect_boundary_index(bounds.max_x, clip.max_x).min(clip.max_x);
@@ -450,6 +456,7 @@ fn clipped_quad_pixel_area(bounds: QuadBounds, clip: ClipBounds) -> usize {
     (end_x - start_x) * (end_y - start_y)
 }
 
+#[cfg(feature = "egui")]
 fn surface_cover_basis_points(
     visible_px: usize,
     surface_width: usize,
@@ -461,6 +468,7 @@ fn surface_cover_basis_points(
         .unwrap_or(0)
 }
 
+#[cfg(feature = "egui")]
 const fn clip_covers_surface(
     clip: ClipBounds,
     surface_width: usize,

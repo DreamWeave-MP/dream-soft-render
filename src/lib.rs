@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! A CPU rasterizer that turns 2D triangles into RGBA8 bytes, and does it the same way every
 //! time.
 //!
@@ -64,10 +66,15 @@
 //! Draw calls rasterize immediately, in the order you make them. There is no command list to
 //! flush and no deferred state that can disagree with what you asked for.
 //!
-//! egui applications do not build meshes by hand. They call
-//! [`SoftwareRenderer::render_egui`] with a UI closure; see [`egui_adapter`]. Both paths write
-//! the same surface, share the same textures, and produce identical pixels for identical
+//! egui applications do not build meshes by hand. With the `egui` feature they call
+//! `SoftwareRenderer::render_egui` with a UI closure; see the `egui_adapter` module. Both paths
+//! write the same surface, share the same textures, and produce identical pixels for identical
 //! geometry.
+//!
+//! # Features
+//!
+//! - `egui` (off by default): the egui adapter. Without it the crate has no egui dependency at
+//!   all; the rasterizer and the drawing API above never needed one.
 //!
 //! # The Rules
 //!
@@ -112,10 +119,13 @@
 //! wrong frame would only hide where.
 
 mod color;
+#[cfg(feature = "egui")]
+#[cfg_attr(docsrs, doc(cfg(feature = "egui")))]
 pub mod egui_adapter;
 mod error;
 mod geometry;
 mod raster;
+#[cfg(feature = "egui")]
 mod render_benchmark;
 mod renderer;
 mod surface;
@@ -128,7 +138,7 @@ pub use renderer::{Frame, Mesh, SoftwareRenderer};
 pub use surface::{MAX_SURFACE_PIXELS, SoftwareSurface};
 pub use texture::{MAX_TEXTURE_BYTES, TextureId};
 
-// Compiles the README's examples so they cannot drift from the API.
-#[cfg(doctest)]
+// Compiles the README's examples so they cannot drift from the API. Some use the egui adapter.
+#[cfg(all(doctest, feature = "egui"))]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;

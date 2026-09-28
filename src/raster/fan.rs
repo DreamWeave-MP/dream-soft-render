@@ -308,6 +308,7 @@ impl SolidFanSpanCache {
         }
     }
 
+    #[cfg(feature = "egui")]
     pub(crate) fn record_stats(&self, stats: &mut RasterStats) {
         stats.solid_fan_span_cache_resident_entries = self.entries.len();
         stats.solid_fan_span_cache_resident_rows = self.resident_rows;

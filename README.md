@@ -17,6 +17,13 @@ core that notices every wasted instruction.
 dream-soft-render = "0.1"
 ```
 
+The crate has no egui dependency by default. The egui adapter is behind a feature:
+
+```toml
+[dependencies]
+dream-soft-render = { version = "0.1", features = ["egui"] }
+```
+
 ## Drawing
 
 ```rust
@@ -71,6 +78,8 @@ of the slices you pass; the vertices are not copied into some internal format fi
 background, draw one.
 
 ## Drawing egui
+
+This needs the `egui` feature.
 
 ```rust
 use dream_soft_render::SoftwareRenderer;
@@ -160,10 +169,11 @@ the device before quoting a frame rate.
 ## Tests
 
 ```sh
-cargo test
+cargo test --all-features
 ```
 
-Beyond the unit tests, `tests/golden.rs` renders three egui scenes (a form, a monospace
+`--all-features` includes the egui adapter's tests. Beyond the unit tests, `tests/golden.rs`
+renders three egui scenes (a form, a monospace
 preview, a shadowed window) and `tests/api.rs` renders a scene through the plain drawing API.
 Each is pinned by an FNV-1a hash of the whole surface. A change that moves one byte fails.
 That is deliberate: "looks the same" is not a test.
@@ -175,7 +185,7 @@ user mode and Rust's bundled linker are enough:
 rustup target add aarch64-unknown-linux-musl
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUNNER=qemu-aarch64-static \
-cargo test --release --target aarch64-unknown-linux-musl
+cargo test --release --all-features --target aarch64-unknown-linux-musl
 ```
 
 The golden hashes are the same on both architectures. If they are not, the NEON code is wrong.
@@ -183,8 +193,8 @@ The golden hashes are the same on both architectures. If they are not, the NEON 
 ## Benchmarks
 
 ```sh
-cargo bench --bench frame
-cargo bench --bench frame -- --no-feathering --scene form
+cargo bench --features egui --bench frame
+cargo bench --features egui --bench frame -- --no-feathering --scene form
 ```
 
 The benchmark renders the golden scenes a few hundred times each and reports rasterization and

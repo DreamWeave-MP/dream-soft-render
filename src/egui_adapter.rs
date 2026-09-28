@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Drawing [egui] frames with a [`SoftwareRenderer`](crate::SoftwareRenderer).
+//! Drawing [egui] frames with a [`SoftwareRenderer`](crate::SoftwareRenderer). Requires the
+//! `egui` feature.
 //!
 //! [`SoftwareRenderer::render_egui`](crate::SoftwareRenderer::render_egui) runs a UI closure
 //! for one frame, applies egui's texture uploads, tessellates, and rasterizes into the same

@@ -74,7 +74,7 @@ impl Color {
         Self { r, g, b, a }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "egui"))]
     pub(crate) const fn to_egui(self) -> egui::Color32 {
         egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
     }
