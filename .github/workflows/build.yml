@@ -15,7 +15,7 @@ jobs:
       contents: write
       pages: write
       id-token: write
-    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v46
+    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v47
     secrets: inherit
     with:
       crate_names: '["dream-soft-render"]'
@@ -32,7 +32,3 @@ jobs:
 
       # benches/frame.rs is a custom harness, so the release gets the raw benchmark log.
       generate_benchmarks: true
-
-      # llvm_toolchain is for crates under the clang cross-language LTO policy (l3i and its
-      # dependents). This crate has no C++ and no l3i dependency. Turn it on if that changes.
-      # llvm_toolchain: true

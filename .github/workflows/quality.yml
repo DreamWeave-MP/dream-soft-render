@@ -27,9 +27,8 @@ jobs:
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
-      # Uncomment for crates built under the clang cross-language LTO policy (l3i and its dependents):
-      # Clippy runs the build scripts, which refuse a toolchain without a matching clang and lld.
-      # - uses: DreamWeave-MP/StroggForge/.github/actions/setup-llvm@v46
+      # Every DreamWeave crate builds with clang and lld matching rustc's LLVM.
+      - uses: DreamWeave-MP/StroggForge/.github/actions/setup-llvm@v47
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -W clippy::pedantic -D warnings
 
