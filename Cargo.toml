@@ -36,3 +36,8 @@ harness = false
 name = "frame"
 harness = false
 required-features = ["egui"]
+
+# Thin LTO in this crate's own release builds and benchmarks. Where .cargo/config.toml passes
+# -Clinker-plugin-lto (Linux, Windows) lld runs it; on macOS rustc does. Dependents set their own.
+[profile.release]
+lto = "thin"
