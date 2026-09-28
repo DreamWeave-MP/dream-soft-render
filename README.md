@@ -144,8 +144,9 @@ looks at each pair of triangles first and recognizes what they are: axis-aligned
 color (rounded panels, filled shapes), and triangles whose texels are all the same. Those draw
 as spans. Only what is left pays for general triangle rasterization.
 
-On `AArch64`, the hot spans (glyph blending, translucent fills, textured rows) run NEON code.
-It produces the same bytes as the portable code, and the tests hold it to that.
+On `AArch64`, the hot loops (glyph blending, translucent fills, textured rows, gradient rows,
+and the coverage scans that find where each triangle row starts and ends) run NEON code. It
+produces the same bytes as the portable code, and randomized tests hold every kernel to that.
 
 The one thing the renderer cannot skip is egui's shape anti-aliasing. egui calls it
 *feathering*: it adds a one-pixel strip of translucent triangles along every shape edge, and
