@@ -74,8 +74,11 @@ impl SoftwareRenderer {
     ///
     /// # Errors
     ///
-    /// Returns an error if the surface cannot be sized, a texture delta is malformed, a mesh
-    /// references out-of-range vertices, or egui emits a paint callback.
+    /// Returns an error if the surface cannot be sized, a texture delta is malformed or would
+    /// exceed [`MAX_TEXTURE_BYTES`](crate::MAX_TEXTURE_BYTES), a mesh's index count is not a
+    /// multiple of three or an index is past its vertices, a clip rectangle is not finite, or
+    /// egui emits a paint callback. Mesh errors carry the [`Error`](crate::Error) that
+    /// [`Frame::mesh`](crate::Frame::mesh) would return for the same indices.
     pub fn render_egui(
         &mut self,
         width: usize,
@@ -436,6 +439,7 @@ impl SoftwareRenderer {
         mut raster_stats: Option<&mut RasterStats>,
         mut raster_timings: Option<&mut RasterTimings>,
     ) -> io::Result<()> {
+        check_egui_mesh_indices(mesh)?;
         if let Some(stats) = borrow_optional_mut(&mut stats) {
             stats.mesh_indices += mesh.indices.len();
         }
@@ -882,6 +886,29 @@ fn same_primitives(
         })
 }
 
+/// Holds an egui mesh's indices to what [`Frame::mesh`] requires of its own: whole triangles,
+/// and no index past the vertices. egui checks meshes only in debug builds.
+fn check_egui_mesh_indices(mesh: &egui::Mesh) -> io::Result<()> {
+    let index_count = mesh.indices.len();
+    if !index_count.is_multiple_of(3) {
+        return Err(io::Error::other(crate::Error::IndexCount(index_count)));
+    }
+    let vertex_count = mesh.vertices.len();
+    let out_of_range =
+        |index: &u32| usize::try_from(*index).is_ok_and(|index| index >= vertex_count);
+    // The largest index is one pass that vectorizes; the first offender is only looked for once
+    // there is one.
+    if mesh.indices.iter().max().is_some_and(out_of_range)
+        && let Some(&index) = mesh.indices.iter().find(|index| out_of_range(index))
+    {
+        return Err(io::Error::other(crate::Error::IndexOutOfRange {
+            index,
+            vertex_count,
+        }));
+    }
+    Ok(())
+}
+
 /// An egui clip rectangle as pixel bounds: grown outward to whole pixels, clamped to the
 /// surface, and an error if any edge is not finite.
 fn egui_clip_bounds(rect: egui::Rect, width: usize, height: usize) -> io::Result<ClipBounds> {
@@ -1301,6 +1328,50 @@ mod tests {
         assert_eq!(primitive_stats.solid_fan_runs, 0);
         assert_eq!(primitive_stats.generic_triangles_rasterized, 4);
         assert_eq!(raster_stats.solid_fan_calls, 0);
+    }
+
+    // egui checks a mesh's indices only in debug builds, so release builds hand a mesh that names
+    // vertices it does not have to the renderer, which skipped those triangles in silence.
+    #[test]
+    fn egui_meshes_with_bad_indices_fail_the_frame() {
+        let texture_id = egui::TextureId::Managed(1);
+        let mut renderer = renderer_with_white_texture(texture_id, 8, 8);
+        let mut out_of_range = full_surface_quad_mesh(texture_id, 8.0, 8.0);
+        out_of_range.indices[4] = 9;
+        out_of_range.indices[5] = 4;
+        let mut partial_triangle = full_surface_quad_mesh(texture_id, 8.0, 8.0);
+        partial_triangle.indices.pop();
+
+        for (mesh, expected) in [
+            (
+                out_of_range,
+                crate::Error::IndexOutOfRange {
+                    index: 9,
+                    vertex_count: 4,
+                },
+            ),
+            (partial_triangle, crate::Error::IndexCount(5)),
+        ] {
+            let error = renderer
+                .rasterize(&[clipped_mesh_primitive(mesh, 8.0, 8.0)], None, None, None)
+                .expect_err("malformed mesh");
+            assert_eq!(
+                error
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<crate::Error>()),
+                Some(&expected)
+            );
+            assert_eq!(error.to_string(), expected.to_string());
+        }
+        assert!(
+            renderer
+                .surface
+                .pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| *pixel == [0, 0, 0, 255])
+        );
     }
 
     // Uploads that fail part way have already changed the textures before the failing one, and
