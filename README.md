@@ -1,23 +1,26 @@
 # dream-soft-render
 
 A CPU rasterizer for 2D triangle meshes and [egui](https://github.com/emilk/egui) frames. It
-writes premultiplied RGBA8 into a buffer you own, and the same draw calls produce the same
-bytes on every platform.
+writes premultiplied RGBA8 into a buffer you own, and the same draw calls produce the same bytes
+on every platform, AArch64's NEON code included.
 
-There is no GPU here, no window, and no swapchain. You hand it rectangles, textured rectangles,
-and meshes, or an egui UI closure, and you get pixels back. Whether those pixels go to a Linux
-framebuffer, a PNG, or a golden-test hash is up to you.
+There is no GPU here, no window and no swapchain. You hand it rectangles, textured rectangles and
+meshes, or an egui UI closure, and you get pixels back. Whether they go to a Linux framebuffer, a
+PNG or a golden-test hash is up to you. It was pulled out of
+[dream-ini](https://github.com/DreamWeave-MP/dream-ini), whose PortMaster build draws its whole
+egui interface through it on handhelds with no usable GPU.
 
-It was pulled out of [Dream-INI](https://github.com/DreamWeave-MP/dream-ini), whose PortMaster
-build draws its whole egui interface through it on handhelds with no usable GPU and a small ARM
-core that notices every wasted instruction.
+**Documentation, including the full API reference:
+<https://dreamweave-mp.github.io/dream-soft-render/>**
 
-```toml
-[dependencies]
-dream-soft-render = "1"
+## Install
+
+```sh
+cargo add dream-soft-render
 ```
 
-The crate has no egui dependency by default. The egui adapter is behind a feature:
+Rust 1.92 or newer. Without features the crate has no dependencies. The egui adapter is the `egui`
+feature:
 
 ```toml
 [dependencies]
@@ -68,18 +71,13 @@ fn draw_status_panel(renderer: &mut SoftwareRenderer) -> Result<Vec<u8>, dream_s
 }
 ```
 
-Draw calls rasterize immediately, in call order. There is no command list to flush, and no
-deferred state that can disagree with what you asked for. `Frame::mesh` rasterizes straight out
-of the slices you pass; the vertices are not copied into some internal format first, because
-`Vertex` is the internal format.
-
-`begin_frame` does not clear. The surface keeps the previous frame's pixels until you call
-`clear`, except that a new or resized surface starts transparent black. If you want a
-background, draw one.
+Each call rasterizes before it returns, in call order. `begin_frame` does not clear: call `clear`
+for a background. Colors and texture pixels are premultiplied, pixels are sampled at their
+centers, and bad input, such as an index past the vertices or a NaN rectangle, is an error rather
+than a quietly wrong frame. [The rules](https://dreamweave-mp.github.io/dream-soft-render/docs/rules/)
+state all of it exactly.
 
 ## Drawing egui
-
-This needs the `egui` feature.
 
 ```rust
 use dream_soft_render::SoftwareRenderer;
@@ -97,115 +95,22 @@ fn render_ui(renderer: &mut SoftwareRenderer, context: &egui::Context) -> std::i
 }
 ```
 
-`render_egui` runs the closure, applies egui's texture uploads, tessellates at one pixel per
-point, and rasterizes into the same surface `Frame` draws into. egui's vertex buffers are read
-in place: egui's vertex has the same 20-byte layout as `Vertex`, compile-time assertions hold
-the two to it, and the build fails if a future egui changes it. Textures from `create_texture`
-show up in egui through `egui_adapter::egui_texture_id`.
+`render_egui` needs the `egui` feature. It runs the closure, applies egui's texture uploads,
+tessellates at one pixel per point and rasterizes into the same surface. A frame identical to the
+last one is skipped, and `surface_changed` says so, so the host can skip presenting it too.
 
-egui repaints a lot: animations, cursor blinks, the extra layout passes it takes when widgets
-change size. Many of those frames come out identical. When a frame's tessellated output matches
-the previous one bit for bit and no texture changed, the rasterizer skips the frame and says so
-through `surface_changed`, so the host can skip presenting it too. Dream-INI skips its
-framebuffer blit that way.
+## Where to read next
 
-egui paint callbacks are not supported. They exist to run GPU code, and there is no GPU.
-
-## The Rules
-
-The crate docs hold the full contract, and every drawing path follows it, egui frames included.
-The short version:
-
-- **Colors are premultiplied RGBA8.** So are texture pixels. `Color::from_rgba_unmultiplied`
-  converts straight alpha. `Color::to_packed` has a fixed bit layout (red in the low byte), so
-  host byte order never leaks into your data.
-- **The surface is an opaque framebuffer.** Blending is premultiplied source-over and writes
-  alpha 255. The alpha channel does not carry coverage.
-- **Coordinates are pixels,** with the origin at the top-left and y pointing down. Pixels are
-  sampled at their centers.
-- **Clip rectangles are integer pixels,** half-open and clamped to the surface.
-- **Sampling is nearest-texel.** There is no filtering.
-- **Bad input is an error.** An index past the end of its vertices, pixel data of the wrong
-  length, a NaN rectangle, a freed texture. The renderer does not clip garbage into something
-  drawable and carry on, because a quietly wrong frame hides the bug that produced it.
-
-Surfaces are capped at 1280x720 pixels and one renderer's textures at 8 MiB
-(`MAX_SURFACE_PIXELS`, `MAX_TEXTURE_BYTES`). Those limits exist to catch accidents on small
-machines, not because the rasterizer falls over past them.
-
-## Where the Time Goes
-
-Most of this crate is not the triangle rasterizer. It is the code that avoids needing it.
-
-egui draws a UI as a pile of anonymous triangles. Treated that way, a 5-pixel glyph costs two
-full triangle setups, edge functions, and per-pixel barycentric interpolation. The renderer
-looks at each pair of triangles first and recognizes what they are: axis-aligned rectangles
-(solid, textured, or glyph quads in egui's own vertex layout), triangle fans with one solid
-color (rounded panels, filled shapes), and triangles whose texels are all the same. Those draw
-as spans. Only what is left pays for general triangle rasterization.
-
-On `AArch64`, the hot loops (glyph blending, translucent fills, textured rows, gradient rows,
-and the coverage scans that find where each triangle row starts and ends) run NEON code. It
-produces the same bytes as the portable code, and randomized tests hold every kernel to that.
-
-The one thing the renderer cannot skip is egui's shape anti-aliasing. egui calls it
-*feathering*: it adds a one-pixel strip of translucent triangles along every shape edge, and
-those triangles are thin, numerous, and cost the most per pixel of anything egui draws. On slow
-CPUs, turn it off:
-
-```rust
-use dream_soft_render::egui_adapter::egui;
-
-fn disable_feathering(context: &egui::Context) {
-    context.tessellation_options_mut(|options| options.feathering = false);
-}
-```
-
-Text keeps its anti-aliasing either way; that lives in the font atlas. Measured as `AArch64`
-instructions per steady frame of the benchmark scenes (640x480, counted under qemu), turning
-feathering off removes 44% of the work for a form, 17% for a text-heavy preview, and 35% for a
-shadowed window. Instruction counts are not cycles; they leave out memory stalls. Measure on
-the device before quoting a frame rate.
-
-## Tests
-
-```sh
-cargo test --all-features
-```
-
-`--all-features` includes the egui adapter's tests. Beyond the unit tests, `tests/golden.rs`
-renders three egui scenes (a form, a monospace
-preview, a shadowed window) and `tests/api.rs` renders a scene through the plain drawing API.
-Each is pinned by an FNV-1a hash of the whole surface. A change that moves one byte fails.
-That is deliberate: "looks the same" is not a test.
-
-The NEON paths only compile on `AArch64`, so test them there. No ARM machine is needed; qemu
-user mode and Rust's bundled linker are enough:
-
-```sh
-rustup target add aarch64-unknown-linux-musl
-CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \
-CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUNNER=qemu-aarch64-static \
-cargo test --release --all-features --target aarch64-unknown-linux-musl
-```
-
-The golden hashes are the same on both architectures. If they are not, the NEON code is wrong.
-
-## Benchmarks
-
-```sh
-cargo bench --bench draw
-cargo bench --features egui --bench frame
-cargo bench --features egui --bench frame -- --no-feathering --scene form
-```
-
-`draw` exercises the drawing API alone, with no egui: a page of glyph-sized textured rectangles,
-stacked panels, and a gradient triangle fan. `frame` renders the egui golden scenes and reports
-rasterization and whole-frame times separately. Both report microseconds per frame. `--help`
-does not exist; the options are listed at the top of each file under `benches/`.
-
-Wall-clock numbers from a desktop x86 CPU tell you about a desktop x86 CPU. For the handhelds
-this crate targets, compare `AArch64` instruction counts, or run it on the device.
+- [Start here](https://dreamweave-mp.github.io/dream-soft-render/docs/start-here/): draw a frame
+  and save it as an image
+- [Hosting egui](https://dreamweave-mp.github.io/dream-soft-render/docs/egui/): textures,
+  unchanged frames, feathering and failures
+- [Fast frames](https://dreamweave-mp.github.io/dream-soft-render/docs/performance/): what the
+  rasterizer recognizes, and the benchmarks
+- [Platforms](https://dreamweave-mp.github.io/dream-soft-render/docs/platforms/): the NEON
+  kernels, and testing them under qemu
+- [Rust API](https://dreamweave-mp.github.io/dream-soft-render/docs/api/) and the
+  [changelog](https://dreamweave-mp.github.io/dream-soft-render/home/changelog/)
 
 ## License
 
@@ -215,3 +120,8 @@ Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion
 in this crate by you, as defined in the Apache-2.0 license, shall be dual licensed as above,
 without any additional terms or conditions.
+
+## Support
+
+Has dream-soft-render been useful to you? Consider
+[amplifying the signal](https://ko-fi.com/magicaldave) through ko-fi.
