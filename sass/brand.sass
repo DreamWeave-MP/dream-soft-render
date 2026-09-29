@@ -1,8 +1,25 @@
 // dream-soft-render. This file belongs to dream-soft-render: the template never changes it, and it
-// loads last. The frost palette does the heavy lifting; the hero's right column holds a golden
-// frame the crate drew, so it needs no decoration.
+// loads last. The frost palette does the heavy lifting.
 
 // The docs' figures are the renderer's own pixels, enlarged by whole pixels to show them. When a
 // narrow column scales them again, keep them sharp instead of smoothing the edges being shown.
 .dw-figure img[src*="/img/docs/"]
   image-rendering: pixelated
+
+// The hero: static/js/dsr-hero.js redraws the golden frame on a wall of pixels where the picture
+// stands. The picture is the still: it shows until the wall's first frame, and stays without WebGL.
+// Once the wall is live the picture keeps its place in the layout, invisible, so nothing moves.
+.dw-hero__art > .dsr-hero__canvas
+  opacity: 0
+  transition: opacity .7s var(--dw-ease)
+
+.dw-hero__art.is-live > .dsr-hero__canvas
+  opacity: 1
+
+// The handheld renders at half resolution in blocks of pixels; keep the blocks square-edged.
+.dw-hero__art.is-handheld > .dsr-hero__canvas
+  image-rendering: pixelated
+
+.dw-hero:has(> .dw-hero__art.is-live) .dw-hero__figure
+  opacity: 0
+  transition: opacity .7s var(--dw-ease)

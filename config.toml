@@ -54,6 +54,12 @@ menu_items = [
 goatcounter = "dreamweave-mp"
 
 # GitHub Discussions on this repository, through giscus. The ids are looked up at build time.
+# The hero redraws the header's golden frame on a wall of 80x60 pixels, call by call, with a port
+# of the crate's rules: static/js/dsr-hero.js, on three.js r180 in static/js/vendor/.
+[extra.hero]
+script = "js/dsr-hero.js"
+preload = ["js/vendor/three.module.min.js", "js/vendor/three.core.min.js"]
+
 [extra.comments]
 enabled = true
 category = "General"
