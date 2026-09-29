@@ -112,7 +112,12 @@ impl SoftwareRenderer {
         let egui_run_elapsed = elapsed_micros(stage_start);
 
         let stage_start = log_timings.then(Instant::now);
-        let texture_delta_stats = self.textures.apply(&output.textures_delta)?;
+        // Uploads that fail part way have still changed the textures applied before the failure,
+        // so the surface no longer shows what the stored textures hold.
+        let texture_delta_stats = self
+            .textures
+            .apply(&output.textures_delta)
+            .inspect_err(|_| self.previous_frame_valid = false)?;
         let texture_apply_elapsed = elapsed_micros(stage_start);
 
         let stage_start = log_timings.then(Instant::now);
@@ -1296,6 +1301,57 @@ mod tests {
         assert_eq!(primitive_stats.solid_fan_runs, 0);
         assert_eq!(primitive_stats.generic_triangles_rasterized, 4);
         assert_eq!(raster_stats.solid_fan_calls, 0);
+    }
+
+    // Uploads that fail part way have already changed the textures before the failing one, and
+    // egui does not send them again, so the next frame cannot count as unchanged.
+    #[test]
+    fn a_frame_after_a_failed_texture_upload_is_rasterized() {
+        let context = egui::Context::default();
+        let mut renderer = SoftwareRenderer::default();
+        let solid = |color| egui::ColorImage::new([2, 2], vec![color; 4]);
+        let mut image = context.load_texture(
+            "image",
+            solid(egui::Color32::RED),
+            egui::TextureOptions::NEAREST,
+        );
+        let image_id = image.id();
+        let draw = |ui: &mut egui::Ui| {
+            ui.painter().image(
+                image_id,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(4.0, 4.0)),
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        };
+        renderer
+            .render_egui(8, 8, &RenderFrame::new(&context), draw)
+            .expect("first frame");
+        assert_eq!(renderer.surface().pixels[..4], [255, 0, 0, 255]);
+
+        // The recolor applies; two 4 MiB images then pass the texture budget on the second.
+        image.set(solid(egui::Color32::BLUE), egui::TextureOptions::NEAREST);
+        let side = 1024;
+        let _over_budget: Vec<egui::TextureHandle> = (0..2)
+            .map(|index| {
+                context.load_texture(
+                    format!("large {index}"),
+                    egui::ColorImage::new([side, side], vec![egui::Color32::WHITE; side * side]),
+                    egui::TextureOptions::NEAREST,
+                )
+            })
+            .collect();
+        assert!(
+            renderer
+                .render_egui(8, 8, &RenderFrame::new(&context), draw)
+                .is_err()
+        );
+
+        let outcome = renderer
+            .render_egui(8, 8, &RenderFrame::new(&context), draw)
+            .expect("third frame");
+        assert!(outcome.surface_changed);
+        assert_eq!(renderer.surface().pixels[..4], [0, 0, 255, 255]);
     }
 
     fn quad_vertices() -> [Vertex; 4] {
