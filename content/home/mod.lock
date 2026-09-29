@@ -1,0 +1,43 @@
+{
+  "schema_version": "2",
+  "document": "lock",
+  "project": "f7b9633b-b7cb-4db9-a19f-63556586a81d",
+  "note": "Written by CI when a release tag is pushed: what each published release's archive contains. Do not edit.",
+  "releases": [
+    {
+      "version": "1.0.0",
+      "locked_from": "f558caa19026460e81a5895a30e59ab74ae76e32",
+      "artifacts": [
+        {
+          "id": "crate",
+          "format": "crate",
+          "filename": "dream-soft-render-1.0.0.crate",
+          "media_type": "application/gzip",
+          "size": 136806,
+          "digests": {
+            "sha256": "77cfb5e928da15f9baaea82bd581e2ff20a4ba8f6aee2baaaee5ae4bd5147326"
+          }
+        }
+      ],
+      "runtimes": {},
+      "platforms": [],
+      "provides": [],
+      "relationships": [],
+      "components": [
+        {
+          "id": "main",
+          "name": "dream-soft-render",
+          "path": ".",
+          "required": true,
+          "default": true,
+          "requires": [],
+          "conflicts": [],
+          "suggested_with": []
+        }
+      ],
+      "groups": [],
+      "extensions": {},
+      "critical_extensions": []
+    }
+  ]
+}
