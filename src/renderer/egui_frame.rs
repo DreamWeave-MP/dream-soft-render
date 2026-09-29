@@ -588,7 +588,7 @@ pub struct RenderTimings {
     pub texture_apply: u128,
     /// Tessellating egui's shapes into meshes.
     pub tessellate: u128,
-    /// Rasterizing the meshes (zero when an unchanged frame skipped it).
+    /// Rasterizing the meshes, or for a frame skipped as unchanged, finding that it was.
     pub rasterize: u128,
     /// Freeing textures egui released.
     pub texture_free: u128,
