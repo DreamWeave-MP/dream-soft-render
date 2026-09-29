@@ -82,7 +82,7 @@
 //! disagree, the code is wrong.
 //!
 //! - **Surface.** Row-major RGBA8, top row first, exactly `width * height * 4` bytes, at most
-//!   [`MAX_SURFACE_PIXELS`] pixels. It is an opaque framebuffer: every blended pixel is written
+//!   [`MAX_SURFACE_PIXELS`] pixels and 65535 on a side. It is an opaque framebuffer: every blended pixel is written
 //!   with alpha 255, so the alpha channel does not carry coverage. A new or resized surface
 //!   starts transparent black. Otherwise a frame draws over whatever the last one left, until
 //!   you call [`Frame::clear`]. Nothing clears behind your back.
@@ -111,7 +111,8 @@
 //!
 //! A surface holds at most [`MAX_SURFACE_PIXELS`] (1280x720) and one renderer's textures at
 //! most [`MAX_TEXTURE_BYTES`] (8 MiB). Both limits exist to catch accidents on small machines,
-//! not because the rasterizer falls over past them.
+//! not because the rasterizer falls over past them. A surface side is also at most 65535
+//! pixels, and that limit is the rasterizer's: its pixel coordinates stop there.
 //!
 //! Malformed input is an [`Error`]: a mesh index past the end of its vertices, pixel data of
 //! the wrong length, a NaN rectangle, a freed texture. The renderer does not clip bad input

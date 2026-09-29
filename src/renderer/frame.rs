@@ -90,7 +90,8 @@ impl SoftwareRenderer {
     /// # Errors
     ///
     /// [`Error::SurfaceSize`] if the pixel count overflows or exceeds
-    /// [`MAX_SURFACE_PIXELS`](crate::MAX_SURFACE_PIXELS).
+    /// [`MAX_SURFACE_PIXELS`](crate::MAX_SURFACE_PIXELS), or either side is longer than 65535
+    /// pixels.
     pub fn begin_frame(&mut self, width: usize, height: usize) -> Result<Frame<'_>, Error> {
         let resized = self
             .surface

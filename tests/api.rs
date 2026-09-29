@@ -120,6 +120,37 @@ fn surface_size_is_validated() {
     assert!(renderer.begin_frame(1280, 720).is_ok());
 }
 
+// The rasterizer's pixel coordinates are f32s clamped to u16::MAX, so a longer side drew
+// everything past 65535 as if it ended there.
+#[test]
+fn surfaces_are_at_most_65535_pixels_on_a_side() -> Result<(), Error> {
+    let mut renderer = SoftwareRenderer::default();
+    for (width, height) in [(65_536, 1), (1, 65_536), (100_000, 2)] {
+        assert_eq!(
+            renderer.begin_frame(width, height).map(|_| ()),
+            Err(Error::SurfaceSize { width, height })
+        );
+    }
+
+    let mut frame = renderer.begin_frame(65_535, 1)?;
+    frame.clear(Color::BLACK);
+    frame.fill_rect(
+        Rect::from_min_max([0.0, 0.0], [60_000.0, 1.0]),
+        Color::from_rgba_premultiplied(100, 0, 0, 100),
+        ClipRect::ALL,
+    )?;
+    let covered = frame
+        .surface()
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|pixel| pixel[0] != 0)
+        .count();
+    assert_eq!(covered, 60_000);
+    Ok(())
+}
+
 #[test]
 fn texture_creation_is_validated() {
     let mut renderer = SoftwareRenderer::default();

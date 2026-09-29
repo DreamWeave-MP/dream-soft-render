@@ -5,6 +5,10 @@ use std::io;
 /// The largest surface, in pixels (1280x720): enough for 640x480 and 1280x720 handheld
 /// framebuffers while rejecting accidental desktop-sized ones.
 pub const MAX_SURFACE_PIXELS: usize = 1280 * 720;
+/// The longest surface side, in pixels. The rasterizer converts pixel coordinates to `f32`
+/// through a `u16` clamp (`usize_to_f32`), so a longer side would draw everything past 65535 as
+/// if the surface ended there.
+const MAX_SURFACE_SIDE: usize = 65_535;
 const MAX_BLEND_PRODUCT: u16 = 255 * 255;
 const BLEND_LOOKUP_TABLE_SIDE: usize = 256;
 const BLEND_LOOKUP_TABLE_SIDE_U16: u16 = 256;
@@ -70,6 +74,11 @@ impl SoftwareSurface {
         if pixels > MAX_SURFACE_PIXELS {
             return Err(io::Error::other(format!(
                 "software surface pixel budget exceeded: {pixels} > {MAX_SURFACE_PIXELS}"
+            )));
+        }
+        if width > MAX_SURFACE_SIDE || height > MAX_SURFACE_SIDE {
+            return Err(io::Error::other(format!(
+                "software surface {width}x{height} is longer than {MAX_SURFACE_SIDE} pixels on a side"
             )));
         }
         let bytes = pixels

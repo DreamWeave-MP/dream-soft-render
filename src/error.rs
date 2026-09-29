@@ -9,7 +9,8 @@ use crate::TextureId;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
-    /// The surface size overflows or exceeds [`MAX_SURFACE_PIXELS`](crate::MAX_SURFACE_PIXELS).
+    /// The surface size overflows, exceeds [`MAX_SURFACE_PIXELS`](crate::MAX_SURFACE_PIXELS), or
+    /// is longer than 65535 pixels on a side.
     SurfaceSize {
         /// Requested width.
         width: usize,
@@ -72,7 +73,8 @@ impl fmt::Display for Error {
             Self::SurfaceSize { width, height } => {
                 write!(
                     f,
-                    "surface size {width}x{height} overflows or exceeds the pixel budget"
+                    "surface size {width}x{height} overflows, exceeds the pixel budget, or is \
+                     longer than 65535 pixels on a side"
                 )
             }
             Self::TextureSize { width, height } => {
