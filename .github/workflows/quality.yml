@@ -28,7 +28,7 @@ jobs:
           submodules: true
       - uses: dtolnay/rust-toolchain@stable
       # Every DreamWeave crate builds with clang and lld matching rustc's LLVM.
-      - uses: DreamWeave-MP/StroggForge/.github/actions/setup-llvm@v48
+      - uses: DreamWeave-MP/StroggForge/.github/actions/setup-llvm@v53
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -W clippy::pedantic -D warnings
 
