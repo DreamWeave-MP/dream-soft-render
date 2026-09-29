@@ -4,7 +4,9 @@
 
 use std::io;
 
-use super::{MAX_TEXTURE_BYTES, TextureId, TextureImage, TextureKey, TextureStore};
+use super::{
+    MAX_TEXTURE_BYTES, MAX_TEXTURE_SIDE, TextureId, TextureImage, TextureKey, TextureStore,
+};
 
 impl TextureKey {
     /// The texture an egui mesh samples. egui only uploads `Managed` textures, so `User(n)` is
@@ -62,6 +64,12 @@ impl TextureStore {
                 .get(&id)
                 .map_or(0, |texture| texture.pixels.len());
             let bytes_used = check_texture_budget(self.bytes_used, old_len, metadata.byte_len)?;
+            if metadata.width > MAX_TEXTURE_SIDE || metadata.height > MAX_TEXTURE_SIDE {
+                return Err(io::Error::other(format!(
+                    "texture {}x{} is longer than {MAX_TEXTURE_SIDE} texels on a side",
+                    metadata.width, metadata.height
+                )));
+            }
             let image = TextureImage::from_image_data(&delta.image, metadata);
             self.textures.insert(id, image);
             self.bytes_used = bytes_used;
@@ -263,6 +271,37 @@ mod tests {
         );
         assert_eq!(store.len(), 1);
         assert_eq!(store.bytes_used(), 4);
+    }
+
+    // Texel indices are computed in f32 from the texture's size clamped to u16::MAX. egui only
+    // checks a texture against max_texture_side in debug builds.
+    #[test]
+    fn texture_store_rejects_sides_longer_than_65536_texels() {
+        let mut store = TextureStore::default();
+        for (index, (size, accepted)) in [
+            ([65_536, 1], true),
+            ([65_537, 1], false),
+            ([1, 65_537], false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let image = egui::ColorImage::new(size, vec![egui::Color32::WHITE; size[0] * size[1]]);
+            let delta = egui::epaint::ImageDelta::full(image, egui::TextureOptions::NEAREST);
+            let result = store.set(egui::TextureId::Managed(index as u64), &delta);
+            if accepted {
+                result.expect("65536 texels fit");
+            } else {
+                assert_eq!(
+                    result.expect_err("too long").to_string(),
+                    format!(
+                        "texture {}x{} is longer than 65536 texels on a side",
+                        size[0], size[1]
+                    )
+                );
+            }
+        }
+        assert_eq!(store.len(), 1);
     }
 
     #[test]

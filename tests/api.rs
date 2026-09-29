@@ -188,6 +188,39 @@ fn texture_creation_is_validated() {
     assert_ne!(first, second);
 }
 
+// Texel indices are computed in f32 from the texture's size clamped to u16::MAX, so a texture
+// longer than 65536 texels on a side sampled the wrong texels: uv 0.5 of 100000 was texel 32768.
+#[test]
+fn textures_are_at_most_65536_texels_on_a_side() -> Result<(), Error> {
+    let mut renderer = SoftwareRenderer::default();
+    for (width, height) in [(65_537, 1), (1, 65_537), (100_000, 2)] {
+        assert_eq!(
+            renderer.create_texture(width, height, &vec![0; width * height * 4]),
+            Err(Error::TextureSize { width, height })
+        );
+    }
+
+    let width = 65_536;
+    let pixels: Vec<u8> = (0..width)
+        .flat_map(|x: usize| {
+            let [low, high, ..] = x.to_le_bytes();
+            [low, high, 0, 255]
+        })
+        .collect();
+    let texture = renderer.create_texture(width, 1, &pixels)?;
+    let mut frame = renderer.begin_frame(1, 1)?;
+    frame.textured_rect(
+        Rect::from_min_max([0.0, 0.0], [1.0, 1.0]),
+        Rect::from_min_max([0.75, 0.0], [0.75, 1.0]),
+        texture,
+        Color::WHITE,
+        ClipRect::ALL,
+    )?;
+    let texel = u16::from_le_bytes([frame.surface().pixels[0], frame.surface().pixels[1]]);
+    assert_eq!(texel, 49_151, "round(0.75 * 65535)");
+    Ok(())
+}
+
 #[test]
 fn texture_updates_and_frees_are_validated() {
     let mut renderer = SoftwareRenderer::default();

@@ -30,10 +30,11 @@ impl SoftwareRenderer {
     ///
     /// # Errors
     ///
-    /// [`Error::TextureSize`] for a zero or overflowing size, [`Error::PixelDataLength`] if
-    /// `pixels` is the wrong length, [`Error::TextureBudget`] if the renderer's texture
-    /// storage would exceed [`MAX_TEXTURE_BYTES`](crate::MAX_TEXTURE_BYTES), and
-    /// [`Error::TextureIdsExhausted`] once the process has issued every possible handle.
+    /// [`Error::TextureSize`] for a zero or overflowing size or a side longer than 65536
+    /// texels, [`Error::PixelDataLength`] if `pixels` is the wrong length,
+    /// [`Error::TextureBudget`] if the renderer's texture storage would exceed
+    /// [`MAX_TEXTURE_BYTES`](crate::MAX_TEXTURE_BYTES), and [`Error::TextureIdsExhausted`] once
+    /// the process has issued every possible handle.
     pub fn create_texture(
         &mut self,
         width: usize,

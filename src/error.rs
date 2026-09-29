@@ -17,7 +17,8 @@ pub enum Error {
         /// Requested height.
         height: usize,
     },
-    /// A texture dimension is zero or the texture's byte size overflows.
+    /// A texture dimension is zero or longer than 65536 texels, or the texture's byte size
+    /// overflows.
     TextureSize {
         /// Requested width.
         width: usize,
@@ -78,7 +79,11 @@ impl fmt::Display for Error {
                 )
             }
             Self::TextureSize { width, height } => {
-                write!(f, "texture size {width}x{height} is empty or overflows")
+                write!(
+                    f,
+                    "texture size {width}x{height} is empty, overflows, or is longer than 65536 \
+                     texels on a side"
+                )
             }
             Self::PixelDataLength { expected, actual } => {
                 write!(f, "pixel data is {actual} bytes, expected {expected}")

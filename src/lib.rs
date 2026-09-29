@@ -112,7 +112,8 @@
 //! A surface holds at most [`MAX_SURFACE_PIXELS`] (1280x720) and one renderer's textures at
 //! most [`MAX_TEXTURE_BYTES`] (8 MiB). Both limits exist to catch accidents on small machines,
 //! not because the rasterizer falls over past them. A surface side is also at most 65535
-//! pixels, and that limit is the rasterizer's: its pixel coordinates stop there.
+//! pixels and a texture side at most 65536 texels, and those limits are the rasterizer's: its
+//! pixel and texel coordinates stop there.
 //!
 //! Malformed input is an [`Error`]: a mesh index past the end of its vertices, pixel data of
 //! the wrong length, a NaN rectangle, a freed texture. The renderer does not clip bad input

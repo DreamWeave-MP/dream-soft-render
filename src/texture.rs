@@ -18,6 +18,11 @@ pub(crate) use egui_textures::TextureDeltaStats;
 /// textures together with those made by [`SoftwareRenderer::create_texture`](crate::SoftwareRenderer::create_texture).
 pub const MAX_TEXTURE_BYTES: usize = 8 * 1024 * 1024;
 
+/// The longest texture side, in texels. Sampling computes a texel index as `uv * (side - 1)` in
+/// `f32`, with the side converted through `usize_to_f32`'s `u16` clamp, so a longer side would
+/// sample the wrong texels.
+pub(crate) const MAX_TEXTURE_SIDE: usize = 65_536;
+
 /// A texture owned by a [`SoftwareRenderer`](crate::SoftwareRenderer), returned by
 /// [`create_texture`](crate::SoftwareRenderer::create_texture).
 ///
@@ -111,7 +116,7 @@ impl TextureStore {
         height: usize,
         pixels: &[u8],
     ) -> Result<(), Error> {
-        if width == 0 || height == 0 {
+        if width == 0 || height == 0 || width > MAX_TEXTURE_SIDE || height > MAX_TEXTURE_SIDE {
             return Err(Error::TextureSize { width, height });
         }
         let expected = rgba8_byte_len(width, height).ok_or(Error::TextureSize { width, height })?;
