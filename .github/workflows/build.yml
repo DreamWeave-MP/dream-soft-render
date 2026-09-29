@@ -12,10 +12,11 @@ on:
 jobs:
   build:
     permissions:
+      actions: write
       contents: write
       pages: write
       id-token: write
-    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v48
+    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v51
     secrets: inherit
     with:
       crate_names: '["dream-soft-render"]'
@@ -24,11 +25,13 @@ jobs:
       dependent_repo_names: |
         DreamWeave-MP/dream-ini
 
-      # rustdoc to GitHub Pages on main; docs.rs builds its own copy on publish.
-      publish_docs: true
-
       # rust-version in Cargo.toml follows egui's, which is the real floor.
       msrv: auto
 
-      # benches/frame.rs is a custom harness, so the release gets the raw benchmark log.
+      # Plain cargo bench runs benches/draw.rs (frame.rs needs the egui feature). It is a custom
+      # harness, so the release gets the raw benchmark log.
       generate_benchmarks: true
+
+      # StroggForge records each version crates.io has in content/home/mod.lock and deploys this
+      # site, the crate's documentation, in place of rustdoc Pages.
+      mod_template: true
