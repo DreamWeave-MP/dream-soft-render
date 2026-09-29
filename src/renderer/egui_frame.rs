@@ -115,12 +115,7 @@ impl SoftwareRenderer {
         let egui_run_elapsed = elapsed_micros(stage_start);
 
         let stage_start = log_timings.then(Instant::now);
-        // Uploads that fail part way have still changed the textures applied before the failure,
-        // so the surface no longer shows what the stored textures hold.
-        let texture_delta_stats = self
-            .textures
-            .apply(&output.textures_delta)
-            .inspect_err(|_| self.previous_frame_valid = false)?;
+        let texture_delta_stats = self.apply_egui_textures(&output.textures_delta)?;
         let texture_apply_elapsed = elapsed_micros(stage_start);
 
         let stage_start = log_timings.then(Instant::now);
@@ -166,12 +161,10 @@ impl SoftwareRenderer {
             raster_stats.as_ref(),
             raster_timings.as_ref(),
         );
-        rasterize_result?;
+        rasterize_result.inspect_err(|_| self.free_egui_textures(&output.textures_delta.free))?;
 
         let stage_start = log_timings.then(Instant::now);
-        for id in output.textures_delta.free {
-            self.textures.free_egui(id);
-        }
+        self.free_egui_textures(&output.textures_delta.free);
         let texture_free_elapsed = elapsed_micros(stage_start);
         let texture_evidence = self.texture_evidence(&texture_delta_stats);
         let total_elapsed = elapsed_micros(total_start);
@@ -192,6 +185,27 @@ impl SoftwareRenderer {
             texture_evidence,
             surface_changed: !unchanged,
         })
+    }
+
+    /// Applies egui's texture uploads. When one fails, those before it have still changed their
+    /// textures, so the surface no longer shows what the store holds, and the frame's releases
+    /// are freed now because the frame ends here.
+    fn apply_egui_textures(
+        &mut self,
+        delta: &egui::TexturesDelta,
+    ) -> io::Result<TextureDeltaStats> {
+        self.textures.apply(delta).inspect_err(|_| {
+            self.previous_frame_valid = false;
+            self.free_egui_textures(&delta.free);
+        })
+    }
+
+    /// Frees the textures egui released this frame. egui names them only once, so every way out
+    /// of a frame frees them, failed frames included.
+    fn free_egui_textures(&mut self, released: &[egui::TextureId]) {
+        for &id in released {
+            self.textures.free_egui(id);
+        }
     }
 
     fn frame_is_unchanged(
@@ -1372,6 +1386,44 @@ mod tests {
                 .iter()
                 .all(|pixel| *pixel == [0, 0, 0, 255])
         );
+    }
+
+    // egui frees a texture once its last handle drops, and says so only in that frame's output,
+    // so a frame that fails must still free it or it holds texture budget for good.
+    #[test]
+    fn a_failed_frame_still_frees_the_textures_egui_released() {
+        let context = egui::Context::default();
+        let mut renderer = SoftwareRenderer::default();
+        let image = context.load_texture(
+            "image",
+            egui::ColorImage::new([2, 2], vec![egui::Color32::RED; 4]),
+            egui::TextureOptions::NEAREST,
+        );
+        let before = renderer
+            .render_egui(8, 8, &RenderFrame::new(&context), |_| {})
+            .expect("upload frame")
+            .texture_evidence;
+
+        drop(image);
+        let paint_callback = |ui: &mut egui::Ui| {
+            struct NoGpu;
+            ui.painter().add(egui::PaintCallback {
+                rect: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(4.0, 4.0)),
+                callback: std::sync::Arc::new(NoGpu),
+            });
+        };
+        assert!(
+            renderer
+                .render_egui(8, 8, &RenderFrame::new(&context), paint_callback)
+                .is_err()
+        );
+
+        let after = renderer
+            .render_egui(8, 8, &RenderFrame::new(&context), |_| {})
+            .expect("next frame")
+            .texture_evidence;
+        assert_eq!(after.count, before.count - 1);
+        assert_eq!(after.bytes, before.bytes - 2 * 2 * 4);
     }
 
     // Uploads that fail part way have already changed the textures before the failing one, and
