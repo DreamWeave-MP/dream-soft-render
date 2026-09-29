@@ -1,0 +1,61 @@
+# dream-soft-render. Structured facts only: the name and summary are `title` and `description` in
+# index.md. Every key is explained at
+# https://dreamweave-mp.github.io/DreamWeave-Mod-Template/guide/mod-toml/
+
+# Permanent identity. Never changes, whatever the crate is called or wherever it is hosted.
+id = "f7b9633b-b7cb-4db9-a19f-63556586a81d"
+
+slug = "dream_soft_render"
+type = "library"
+status = "active"
+license = "MIT OR Apache-2.0"
+
+[[maintainers]]
+name = "DreamWeave"
+url = "https://github.com/DreamWeave-MP"
+
+[links]
+documentation = "@/docs/_index.md"
+donate = "https://ko-fi.com/magicaldave"
+
+# A Rust library. StroggForge's library workflow (.github/workflows/build.yml) tests it on every
+# push; pushing a bare version tag, like 1.0.1, publishes that version to crates.io and records it
+# here.
+[package]
+format = "crate"
+crate = "dream-soft-render"
+
+# Frames from the egui scenes the golden tests pin (tests/golden.rs), drawn by the crate itself.
+[[media]]
+file = "media/window.png"
+alt = "A dark egui settings form for importing Morrowind.ini, with a floating window titled Choose encoding over it: radio buttons, a slider, a progress bar at 42 percent, and a soft shadow."
+caption = "The window golden scene: 640x480, drawn by dream-soft-render."
+featured = true
+
+[[media]]
+file = "media/preview.png"
+alt = "A monospace preview of openmw.cfg lines, data, content and fallback entries, in a scrolling panel with Copy and Close buttons."
+caption = "The preview golden scene: a page of monospace glyph quads."
+
+# Every version on crates.io, oldest first. To release, add the next one here with the day you
+# publish it, set the same version in Cargo.toml, commit, and push its tag: git tag 1.0.1.
+
+[[releases]]
+version = "1.0.0"
+date = 2026-09-28
+summary = "First release: the software rasterizer from dream-ini's PortMaster build, with a drawing API of its own and egui as an option."
+added = [
+    "`SoftwareRenderer` and `Frame`: clear, `fill_rect`, `textured_rect` and `mesh`, rasterized immediately into a premultiplied RGBA8 surface.",
+    "`create_texture`, `update_texture` and `free_texture`, with handles issued process-wide and never reused.",
+    "`Color`, `Vertex`, `Rect`, `ClipRect` and `TextureId`, and one `Error` type for every rejected call.",
+    "The `egui` feature: `render_egui`, `RenderFrame`, `RenderOutcome`, and skipping frames whose output did not change.",
+    "NEON kernels on AArch64 for translucent spans, textured and glyph rows, gradient rows and coverage scans, held byte for byte to the portable code.",
+    "The `draw` and `frame` benchmarks, and golden hashes of four whole frames.",
+]
+known_issues = [
+    "A surface wider or taller than 65535 pixels is accepted and draws wrong past pixel 65535. Refused on the default branch.",
+    "A texture wider or taller than 65536 texels is accepted and samples the wrong texels. Refused on the default branch.",
+    "In `render_egui`, a frame after one whose texture uploads failed part way can be skipped as unchanged and keep the old texels. Fixed on the default branch.",
+    "In `render_egui`, textures egui releases in a frame that fails stay in the store and count against the budget. Fixed on the default branch.",
+    "In `render_egui`, a mesh with an index past its vertices, or a trailing partial triangle, is skipped instead of failing the frame. Fixed on the default branch.",
+]

@@ -6,11 +6,13 @@ rust-version = "1.92"
 description = "Deterministic CPU rasterizer for 2D meshes and egui frames, writing premultiplied RGBA8"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/DreamWeave-MP/dream-soft-render"
-documentation = "https://docs.rs/dream-soft-render"
+homepage = "https://dreamweave-mp.github.io/dream-soft-render/"
+documentation = "https://dreamweave-mp.github.io/dream-soft-render/docs/"
 readme = "README.md"
 keywords = ["rasterizer", "software-renderer", "egui", "framebuffer", "rgba"]
 categories = ["graphics", "gui", "rendering"]
-exclude = [".github"]
+# The repository is also the crate's documentation site; the package is the crate alone.
+include = ["/src", "/benches", "/tests", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [features]
 default = []

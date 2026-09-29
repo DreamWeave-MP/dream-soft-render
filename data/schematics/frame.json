@@ -1,0 +1,20 @@
+{
+  "id": "frame",
+  "title": "Draw calls in, bytes out",
+  "description": "Both ways in rasterize into one surface, through the same recognizers and the same blending, so identical geometry gives identical bytes.",
+  "mode": "flow",
+  "direction": "horizontal",
+  "nodes": [
+    { "id": "calls", "kind": "source", "title": "Draw calls", "detail": "Frame::clear, fill_rect, textured_rect and mesh, each rasterized the moment you make it." },
+    { "id": "raster", "kind": "tool", "title": "The rasterizer", "detail": "Rectangles, one-color fans and triangles with one texel draw as spans. Everything else is covered pixel by pixel. NEON on AArch64, the same bytes either way." },
+    { "id": "surface", "kind": "result", "title": "SoftwareSurface", "detail": "width x height x 4 bytes of premultiplied RGBA8, top row first. Yours to copy to a framebuffer, a file or a hash." },
+    { "id": "egui", "kind": "input", "role": "support", "title": "An egui UI", "detail": "With the egui feature, render_egui runs your UI closure, applies egui's texture uploads and tessellates at one pixel per point." },
+    { "id": "textures", "kind": "service", "role": "support", "title": "Textures", "detail": "Premultiplied RGBA8, created and freed through the renderer. egui's font atlas lives in the same store, under the same 8 MiB budget." }
+  ],
+  "edges": [
+    { "from": "calls", "to": "raster" },
+    { "from": "raster", "to": "surface" },
+    { "from": "egui", "to": "raster", "kind": "support", "label": "render_egui" },
+    { "from": "textures", "to": "raster", "kind": "support", "label": "sampled" }
+  ]
+}

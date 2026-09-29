@@ -1,0 +1,8 @@
+// dream-soft-render. This file belongs to dream-soft-render: the template never changes it, and it
+// loads last. The frost palette does the heavy lifting; the hero's right column holds a golden
+// frame the crate drew, so it needs no decoration.
+
+// The docs' figures are the renderer's own pixels, enlarged by whole pixels to show them. When a
+// narrow column scales them again, keep them sharp instead of smoothing the edges being shown.
+.dw-figure img[src*="/img/docs/"]
+  image-rendering: pixelated
