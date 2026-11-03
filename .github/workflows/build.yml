@@ -16,7 +16,8 @@ jobs:
       contents: write
       pages: write
       id-token: write
-    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v70
+    # v70 expects a Jess-based site; this repository still uses the Python template.
+    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v53
     secrets: inherit
     with:
       crate_names: '["dream-soft-render"]'
