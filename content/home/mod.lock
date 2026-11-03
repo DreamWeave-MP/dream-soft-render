@@ -38,6 +38,41 @@
       "groups": [],
       "extensions": {},
       "critical_extensions": []
+    },
+    {
+      "version": "2.0.0",
+      "locked_from": "cc80a368f39fec6b5c6e428bbaa755f252acf83a",
+      "artifacts": [
+        {
+          "id": "crate",
+          "format": "crate",
+          "filename": "dream-soft-render-2.0.0.crate",
+          "media_type": "application/gzip",
+          "size": 139251,
+          "digests": {
+            "sha256": "507ae1c3fc02ffbdbe66f865448ff40c8d6a52658d8c77582f5cde017d36b791"
+          }
+        }
+      ],
+      "runtimes": {},
+      "platforms": [],
+      "provides": [],
+      "relationships": [],
+      "components": [
+        {
+          "id": "main",
+          "name": "dream-soft-render",
+          "path": ".",
+          "required": true,
+          "default": true,
+          "requires": [],
+          "conflicts": [],
+          "suggested_with": []
+        }
+      ],
+      "groups": [],
+      "extensions": {},
+      "critical_extensions": []
     }
   ]
 }
