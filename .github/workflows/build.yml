@@ -16,8 +16,7 @@ jobs:
       contents: write
       pages: write
       id-token: write
-    # v70 expects a Jess-based site; this repository still uses the Python template.
-    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v53
+    uses: DreamWeave-MP/StroggForge/.github/workflows/libGlobalBuild.yml@v70
     secrets: inherit
     with:
       crate_names: '["dream-soft-render"]'
@@ -33,6 +32,18 @@ jobs:
       # harness, so the release gets the raw benchmark log.
       generate_benchmarks: true
 
-      # StroggForge records each version crates.io has in content/home/mod.lock and deploys this
-      # site, the crate's documentation, in place of rustdoc Pages.
-      mod_template: true
+      # The Python site below provides the documentation instead of rustdoc Pages.
+      publish_docs: false
+
+  site:
+    needs: build
+    permissions:
+      actions: write
+      contents: write
+      pages: write
+      id-token: write
+    # v70's site workflow requires Jess; this repository uses the Python template.
+    uses: DreamWeave-MP/StroggForge/.github/workflows/modGlobalBuild.yml@v53
+    secrets: inherit
+    with:
+      rust_release: true
