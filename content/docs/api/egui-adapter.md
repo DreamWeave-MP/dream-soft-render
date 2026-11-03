@@ -146,7 +146,7 @@ such as `16ms`.
 
 {{ api_signature(value="pub use egui;") }}
 
-The egui crate this one is built against, 0.34. Using it through the re-export keeps your egui
+The egui crate this one is built against, 0.37. Using it through the re-export keeps your egui
 types and the renderer's the same version.
 
 ## SampledRectModulatedWorkload

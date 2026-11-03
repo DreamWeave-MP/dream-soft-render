@@ -62,6 +62,8 @@ impl fmt::Display for TextureId {
 }
 
 fn issue_from(counter: &AtomicU64) -> Option<u64> {
+    // `try_update` replaces this method on newer Rust, but requires a newer MSRV.
+    #[allow(deprecated)]
     counter
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
             next.checked_add(1)

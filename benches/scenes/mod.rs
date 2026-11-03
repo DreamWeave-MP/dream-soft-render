@@ -66,7 +66,7 @@ impl Default for SceneState {
 const ENCODINGS: [&str; 3] = ["win1250", "win1251", "win1252"];
 
 fn form_ui(ui: &mut egui::Ui, state: &mut SceneState) {
-    egui::CentralPanel::default().show_inside(ui, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         ui.heading("Dream INI Importer");
         ui.label("Import Morrowind.ini settings into an OpenMW configuration.");
         ui.separator();
@@ -145,7 +145,7 @@ fn preview_text() -> String {
 }
 
 fn preview_ui(ui: &mut egui::Ui) {
-    egui::CentralPanel::default().show_inside(ui, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.heading("Preview");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

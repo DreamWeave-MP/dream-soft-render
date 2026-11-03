@@ -79,13 +79,13 @@ cargo clippy --target aarch64-unknown-linux-gnu --all-targets --all-features \
 
 | Feature | Default | Adds |
 |---|---|---|
-| `egui` | No | The [`egui_adapter`](@/docs/api/egui-adapter.md) module, `SoftwareRenderer::render_egui` and `set_skip_unchanged_frames`, and a dependency on egui 0.34 |
+| `egui` | No | The [`egui_adapter`](@/docs/api/egui-adapter.md) module, `SoftwareRenderer::render_egui` and `set_skip_unchanged_frames`, and a dependency on egui 0.37 |
 
 Without it the crate has no dependencies.
 
 ## Rust
 
-Rust 1.92 or newer, declared as `rust-version` in `Cargo.toml`. That is egui 0.34's floor, and it
+Rust 1.95 or newer, declared as `rust-version` in `Cargo.toml`. That is egui 0.37's floor, and it
 applies with or without the `egui` feature.
 
 `Error` is `#[non_exhaustive]`: match it with a wildcard arm.
@@ -102,7 +102,7 @@ Every push runs [StroggForge](https://github.com/DreamWeave-MP/StroggForge)'s li
   Apple silicon, where the NEON kernels run;
 - Clippy at the pedantic level with every warning an error, and `rustfmt`;
 - `cargo audit` against the RustSec advisory database;
-- `cargo check` on Rust 1.92, the declared minimum;
+- `cargo check` on Rust 1.95, the declared minimum;
 - a dry run of the crates.io publish.
 
 A daily workflow repeats `rustfmt`, Clippy and `cargo audit` against the latest stable Rust.

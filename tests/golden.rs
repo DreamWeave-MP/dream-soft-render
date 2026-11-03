@@ -19,9 +19,9 @@ use scenes::{Scene, SceneState, render_frame, settled_renderer, surface_hash};
 
 fn expected_hash(scene: Scene) -> u64 {
     match scene {
-        Scene::Form => 0xaef8_18bc_3738_fee7,
-        Scene::Preview => 0x9a8d_1786_69fb_7502,
-        Scene::Window => 0xcb80_d9fe_542f_9c3c,
+        Scene::Form => 0x4c9f_99a1_b186_df42,
+        Scene::Preview => 0x9578_1e3a_b184_bbba,
+        Scene::Window => 0xdbcc_ccf6_9b16_6888,
     }
 }
 

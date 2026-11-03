@@ -28,12 +28,24 @@ impl TextureId {
 }
 
 impl TextureStore {
-    pub(crate) fn apply(&mut self, delta: &egui::TexturesDelta) -> io::Result<TextureDeltaStats> {
+    pub(crate) fn apply(
+        &mut self,
+        delta: &mut egui::TexturesDelta,
+    ) -> io::Result<TextureDeltaStats> {
         let mut stats = TextureDeltaStats::default();
-        for (id, image_delta) in &delta.set {
-            stats.record_set(self.set(*id, image_delta)?);
+        let mut error = None;
+        for (id, image_deltas) in std::mem::take(&mut delta.set) {
+            for image_delta in image_deltas {
+                match self.set(id, &image_delta) {
+                    Ok(set_stats) => stats.record_set(set_stats),
+                    Err(err) => {
+                        error.get_or_insert(err);
+                        break;
+                    }
+                }
+            }
         }
-        Ok(stats)
+        error.map_or(Ok(stats), Err)
     }
 
     fn set(
@@ -347,25 +359,26 @@ mod tests {
         let id = egui::TextureId::Managed(0);
         let full_image = egui::ColorImage::new([2, 2], vec![egui::Color32::WHITE; 4]);
         let partial_image = egui::ColorImage::new([1, 1], vec![egui::Color32::BLACK]);
-        let delta = egui::TexturesDelta {
-            set: vec![
-                (
-                    id,
+        let mut delta = egui::TexturesDelta {
+            set: [(
+                id,
+                [
                     egui::epaint::ImageDelta::full(full_image, egui::TextureOptions::NEAREST),
-                ),
-                (
-                    id,
                     egui::epaint::ImageDelta::partial(
                         [1, 1],
                         partial_image,
                         egui::TextureOptions::NEAREST,
                     ),
-                ),
-            ],
-            free: Vec::new(),
+                ]
+                .into_iter()
+                .collect(),
+            )]
+            .into_iter()
+            .collect(),
+            free: [].into_iter().collect(),
         };
 
-        let stats = store.apply(&delta).expect("texture delta applies");
+        let stats = store.apply(&mut delta).expect("texture delta applies");
 
         assert_eq!(stats.set_count, 2);
         assert_eq!(stats.full_upload_count, 1);

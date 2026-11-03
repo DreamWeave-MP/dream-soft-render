@@ -16,7 +16,7 @@ an image file you can open. Nothing here needs a GPU, a window or egui.
 cargo add dream-soft-render
 ```
 
-It needs Rust 1.92 or newer. Without features it has no dependencies at all. The egui adapter is
+It needs Rust 1.95 or newer. Without features it has no dependencies at all. The egui adapter is
 the `egui` feature; [Hosting egui](@/docs/egui.md) starts there.
 
 ## Draw a frame

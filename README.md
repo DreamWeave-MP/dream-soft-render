@@ -19,12 +19,12 @@ egui interface through it on handhelds with no usable GPU.
 cargo add dream-soft-render
 ```
 
-Rust 1.92 or newer. Without features the crate has no dependencies. The egui adapter is the `egui`
+Rust 1.95 or newer. Without features the crate has no dependencies. The egui adapter is the `egui`
 feature:
 
 ```toml
 [dependencies]
-dream-soft-render = { version = "1", features = ["egui"] }
+dream-soft-render = { version = "2", features = ["egui"] }
 ```
 
 ## Drawing
@@ -85,7 +85,7 @@ use dream_soft_render::egui_adapter::{RenderFrame, egui};
 
 fn render_ui(renderer: &mut SoftwareRenderer, context: &egui::Context) -> std::io::Result<bool> {
     let outcome = renderer.render_egui(640, 480, &RenderFrame::new(context), |ui| {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("Import settings");
             ui.label("Choose Morrowind.ini to continue.");
         });

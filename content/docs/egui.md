@@ -12,11 +12,11 @@ With the `egui` feature, a `SoftwareRenderer` renders egui frames into the same 
 
 ```toml
 [dependencies]
-dream-soft-render = { version = "1", features = ["egui"] }
+dream-soft-render = { version = "2", features = ["egui"] }
 ```
 
 The crate re-exports the egui it is built against as `dream_soft_render::egui_adapter::egui`,
-egui 0.34. Use it, or depend on the same egui version yourself; types from two versions of egui
+egui 0.37. Use it, or depend on the same egui version yourself; types from two versions of egui
 do not mix.
 
 ## One frame
@@ -34,7 +34,7 @@ fn render_ui(
         480,
         &RenderFrame::new(context),
         |ui| {
-            egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 ui.heading("Import settings");
                 ui.label("Choose Morrowind.ini to continue.");
             });

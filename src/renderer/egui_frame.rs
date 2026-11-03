@@ -110,12 +110,13 @@ impl SoftwareRenderer {
             max_texture_side: Some(1024),
             ..Default::default()
         };
-        let output = frame.context.run_ui(raw_input, run_ui);
+        let mut output = frame.context.run_ui(raw_input, run_ui);
         let repaint_delay = root_repaint_delay(&output);
         let egui_run_elapsed = elapsed_micros(stage_start);
 
         let stage_start = log_timings.then(Instant::now);
-        let texture_delta_stats = self.apply_egui_textures(&output.textures_delta)?;
+        let had_texture_updates = !output.textures_delta.set.is_empty();
+        let texture_delta_stats = self.apply_egui_textures(&mut output.textures_delta)?;
         let texture_apply_elapsed = elapsed_micros(stage_start);
 
         let stage_start = log_timings.then(Instant::now);
@@ -133,8 +134,7 @@ impl SoftwareRenderer {
         );
 
         let stage_start = log_timings.then(Instant::now);
-        let unchanged =
-            self.frame_is_unchanged(surface_resized, &output.textures_delta, &primitives);
+        let unchanged = self.frame_is_unchanged(surface_resized, had_texture_updates, &primitives);
         let collect_stats = !unchanged && should_collect_deep_stats(frame.log_render_stats);
         let mut primitive_stats = collect_stats.then(PrimitiveStats::default);
         let mut raster_stats = collect_stats.then(RasterStats::default);
@@ -161,10 +161,10 @@ impl SoftwareRenderer {
             raster_stats.as_ref(),
             raster_timings.as_ref(),
         );
-        rasterize_result.inspect_err(|_| self.free_egui_textures(&output.textures_delta.free))?;
-
         let stage_start = log_timings.then(Instant::now);
         self.free_egui_textures(&output.textures_delta.free);
+        output.textures_delta.clear();
+        rasterize_result?;
         let texture_free_elapsed = elapsed_micros(stage_start);
         let texture_evidence = self.texture_evidence(&texture_delta_stats);
         let total_elapsed = elapsed_micros(total_start);
@@ -192,17 +192,18 @@ impl SoftwareRenderer {
     /// are freed now because the frame ends here.
     fn apply_egui_textures(
         &mut self,
-        delta: &egui::TexturesDelta,
+        delta: &mut egui::TexturesDelta,
     ) -> io::Result<TextureDeltaStats> {
         self.textures.apply(delta).inspect_err(|_| {
             self.previous_frame_valid = false;
             self.free_egui_textures(&delta.free);
+            delta.clear();
         })
     }
 
     /// Frees the textures egui released this frame. egui names them only once, so every way out
     /// of a frame frees them, failed frames included.
-    fn free_egui_textures(&mut self, released: &[egui::TextureId]) {
+    fn free_egui_textures<'a>(&mut self, released: impl IntoIterator<Item = &'a egui::TextureId>) {
         for &id in released {
             self.textures.free_egui(id);
         }
@@ -211,13 +212,13 @@ impl SoftwareRenderer {
     fn frame_is_unchanged(
         &self,
         surface_resized: bool,
-        textures_delta: &egui::TexturesDelta,
+        had_texture_updates: bool,
         primitives: &[egui::ClippedPrimitive],
     ) -> bool {
         self.skip_unchanged_frames
             && self.previous_frame_valid
             && !surface_resized
-            && textures_delta.set.is_empty()
+            && !had_texture_updates
             && same_primitives(&self.previous_primitives, primitives)
     }
 
@@ -969,7 +970,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&texture_delta(texture_id))
+            .apply(&mut texture_delta(texture_id))
             .expect("texture");
         let mesh = textured_quad_mesh(texture_id);
         let mut stats = PrimitiveStats::default();
@@ -998,7 +999,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&texture_delta(texture_id))
+            .apply(&mut texture_delta(texture_id))
             .expect("texture");
         let mut mesh = textured_quad_mesh(texture_id);
         mesh.vertices[3].uv = egui::pos2(0.75, 1.0);
@@ -1082,7 +1083,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&texture_delta(texture_id))
+            .apply(&mut texture_delta(texture_id))
             .expect("texture");
         let mesh = solid_fan_mesh(texture_id, [128, 32, 0, 128]);
         let clip_rect = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(12.0, 12.0));
@@ -1134,7 +1135,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&texture_delta(texture_id))
+            .apply(&mut texture_delta(texture_id))
             .expect("texture");
         let mesh = too_short_mixed_triangle_mesh(texture_id);
         let clip_rect = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(12.0, 12.0));
@@ -1249,7 +1250,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&texture_delta(texture_id))
+            .apply(&mut texture_delta(texture_id))
             .expect("texture");
         let clip_rect = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(12.0, 12.0));
 
@@ -1293,7 +1294,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&texture_delta(texture_id))
+            .apply(&mut texture_delta(texture_id))
             .expect("texture");
         let mesh = solid_fan_mesh(texture_id, [128, 32, 0, 128]);
         let clip = clip_bounds(12, 12);
@@ -1533,7 +1534,7 @@ mod tests {
         renderer.surface.clear([0, 0, 0, 255]);
         renderer
             .textures
-            .apply(&solid_texture_delta(texture_id, Color::WHITE))
+            .apply(&mut solid_texture_delta(texture_id, Color::WHITE))
             .expect("texture");
         renderer
     }
@@ -1695,22 +1696,36 @@ mod tests {
             ],
         );
         egui::TexturesDelta {
-            set: vec![(
+            set: [(
                 texture_id,
-                egui::epaint::ImageDelta::full(image, egui::TextureOptions::NEAREST),
-            )],
-            free: Vec::new(),
+                [egui::epaint::ImageDelta::full(
+                    image,
+                    egui::TextureOptions::NEAREST,
+                )]
+                .into_iter()
+                .collect(),
+            )]
+            .into_iter()
+            .collect(),
+            free: [].into_iter().collect(),
         }
     }
 
     fn solid_texture_delta(texture_id: egui::TextureId, color: Color) -> egui::TexturesDelta {
         let image = egui::ColorImage::new([2, 2], vec![color.to_egui(); 4]);
         egui::TexturesDelta {
-            set: vec![(
+            set: [(
                 texture_id,
-                egui::epaint::ImageDelta::full(image, egui::TextureOptions::NEAREST),
-            )],
-            free: Vec::new(),
+                [egui::epaint::ImageDelta::full(
+                    image,
+                    egui::TextureOptions::NEAREST,
+                )]
+                .into_iter()
+                .collect(),
+            )]
+            .into_iter()
+            .collect(),
+            free: [].into_iter().collect(),
         }
     }
 

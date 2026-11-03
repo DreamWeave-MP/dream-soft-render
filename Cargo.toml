@@ -1,8 +1,8 @@
 [package]
 name = "dream-soft-render"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2024"
-rust-version = "1.92"
+rust-version = "1.95"
 description = "Deterministic CPU rasterizer for 2D meshes and egui frames, writing premultiplied RGBA8"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/DreamWeave-MP/dream-soft-render"
@@ -20,7 +20,7 @@ default = []
 egui = ["dep:egui"]
 
 [dependencies]
-egui = { version = "0.34", optional = true }
+egui = { version = "0.37", optional = true, features = ["default_fonts"] }
 
 [package.metadata.docs.rs]
 all-features = true

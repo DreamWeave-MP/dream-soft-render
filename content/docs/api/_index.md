@@ -66,7 +66,7 @@ fn main() -> Result<(), Error> {
 
 | Feature | Default | Adds |
 |---|---|---|
-| `egui` | No | `SoftwareRenderer::render_egui`, `SoftwareRenderer::set_skip_unchanged_frames`, the `egui_adapter` module, and egui 0.34 as a dependency |
+| `egui` | No | `SoftwareRenderer::render_egui`, `SoftwareRenderer::set_skip_unchanged_frames`, the `egui_adapter` module, and egui 0.37 as a dependency |
 
 ## Threads
 

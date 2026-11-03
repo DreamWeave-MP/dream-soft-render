@@ -59,3 +59,18 @@ known_issues = [
     "In `render_egui`, textures egui releases in a frame that fails stay in the store and count against the budget. Fixed on the default branch.",
     "In `render_egui`, a mesh with an index past its vertices, or a trailing partial triangle, is skipped instead of failing the frame. Fixed on the default branch.",
 ]
+
+[[releases]]
+version = "2.0.0"
+date = 2026-11-03
+summary = "Updates the egui adapter to egui 0.37 and fixes rendering error handling."
+changed = [
+    "The egui feature now uses egui 0.37. Applications using egui types must update to the same version; use the adapter's egui re-export to keep versions aligned.",
+    "The minimum supported Rust version is now 1.95. Bundled egui fonts remain enabled.",
+]
+fixed = [
+    "Reject surfaces larger than 65535 pixels per side and textures larger than 65536 texels per side instead of drawing or sampling incorrectly.",
+    "After failed egui texture uploads, redraw the next frame and release textures even when a frame fails.",
+    "Reject egui meshes with invalid indices or incomplete triangles.",
+    "Keep daily Clippy checks compatible with newer Rust while retaining the minimum supported compiler.",
+]
